@@ -43,7 +43,14 @@ class LoginDialog(QDialog):
         form.addRow("用户名", self.user_edit)
         form.addRow("密码", self.pass_edit)
 
-        tip = QLabel("演示账号: admin / Admin@123（首次启动自动初始化模拟数据）")
+        mode = ctx.mode
+        if mode == "demo":
+            tip_text = "演示模式：admin / Admin@123（仅演示，正式环境禁止）"
+        elif mode == "production":
+            tip_text = "正式模式：无预置账户；禁止演示密码与模拟危化品数据"
+        else:
+            tip_text = "请先选择运行模式（demo / production）"
+        tip = QLabel(tip_text)
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #6b7c85; font-size: 12px;")
 

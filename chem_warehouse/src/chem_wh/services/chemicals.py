@@ -10,6 +10,7 @@ from chem_wh.services.audit import AuditService
 from chem_wh.services.auth import AuthService, UserSession
 from chem_wh.services.exceptions import ValidationError
 from chem_wh.utils.codes import next_code
+from chem_wh.utils.integrity import sha256_file
 from chem_wh.utils.timeutil import now_iso
 
 
@@ -30,17 +31,21 @@ class ChemicalService:
         manufacturer: str = "",
         controlled_flags: str = "",
         notes: str = "",
+        is_demo: bool = False,
     ) -> int:
         self.auth.require(operator, "chem.write")
         if not name.strip():
             raise ValidationError("化学品名称不能为空")
+        mode = self.db.fetchone("SELECT value FROM app_settings WHERE key='app_mode'")
+        if mode and mode["value"] == "production" and is_demo:
+            raise ValidationError("正式模式禁止写入模拟危化品数据")
         ts = now_iso()
         cur = self.db.execute(
             """
             INSERT INTO chemicals(
                 name, cas_no, concentration, specification, manufacturer,
-                hazard_review_status, controlled_flags, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+                hazard_review_status, controlled_flags, notes, is_demo, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
             """,
             (
                 name.strip(),
@@ -50,6 +55,7 @@ class ChemicalService:
                 manufacturer.strip(),
                 controlled_flags.strip(),
                 notes,
+                1 if is_demo else 0,
                 ts,
                 ts,
             ),
@@ -207,16 +213,23 @@ class ChemicalService:
         path = Path(file_path)
         if not path.exists():
             raise ValidationError("SDS 文件不存在（须为本地路径）")
+        digest = sha256_file(path)
         cur = self.db.execute(
             """
             INSERT INTO sds_documents(
-                chemical_id, version, file_path, review_status, uploaded_at
-            ) VALUES (?, ?, ?, 'draft', ?)
+                chemical_id, version, file_path, file_sha256, review_status, uploaded_at
+            ) VALUES (?, ?, ?, ?, 'draft', ?)
             """,
-            (chemical_id, version, str(path), now_iso()),
+            (chemical_id, version, str(path), digest, now_iso()),
         )
         sid = int(cur.lastrowid)
-        self.audit.log(operator.id, "sds.upload", "sds_documents", sid, {"version": version})
+        self.audit.log(
+            operator.id,
+            "sds.upload",
+            "sds_documents",
+            sid,
+            {"version": version, "sha256": digest},
+        )
         return sid
 
     def review_sds(self, reviewer: UserSession, sds_id: int, status: str) -> None:

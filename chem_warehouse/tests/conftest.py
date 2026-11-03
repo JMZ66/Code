@@ -15,6 +15,16 @@ from chem_wh.app_context import AppContext  # noqa: E402
 def ctx(tmp_path: Path) -> AppContext:
     db = tmp_path / "test.db"
     app = AppContext(db)
+    app.initialize_mode("demo")
     app.ensure_seed()
+    yield app
+    app.close()
+
+
+@pytest.fixture()
+def prod_ctx(tmp_path: Path) -> AppContext:
+    db = tmp_path / "prod.db"
+    app = AppContext(db)
+    app.initialize_mode("production")
     yield app
     app.close()

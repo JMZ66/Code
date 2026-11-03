@@ -60,6 +60,29 @@ class AuthService:
         self.db = db
         self.audit = audit
 
+    @staticmethod
+    def validate_password(password: str, *, production: bool = False) -> None:
+        if len(password) < 6:
+            raise ValidationError("密码至少 6 位")
+        if production:
+            if len(password) < 10:
+                raise ValidationError("正式模式密码至少 10 位")
+            classes = sum(
+                [
+                    any(c.islower() for c in password),
+                    any(c.isupper() for c in password),
+                    any(c.isdigit() for c in password),
+                    any(not c.isalnum() for c in password),
+                ]
+            )
+            if classes < 3:
+                raise ValidationError(
+                    "正式模式密码须包含大小写字母、数字、符号中至少三类"
+                )
+            banned = {"Admin@123", "Wh@12345", "Sf@12345", "Vw@12345", "password", "123456"}
+            if password in banned:
+                raise ValidationError("正式模式禁止使用演示/常见弱密码")
+
     def create_user(
         self,
         username: str,
@@ -67,21 +90,27 @@ class AuthService:
         role: str,
         display_name: str,
         actor: Optional[UserSession] = None,
+        *,
+        is_demo: bool = False,
+        production: bool = False,
     ) -> int:
         if role not in ROLE_PERMS:
             raise ValidationError(f"无效角色: {role}")
         if actor is not None and not actor.has("user.manage"):
             raise PermissionError("无权创建用户")
-        if len(password) < 6:
-            raise ValidationError("密码至少 6 位")
+        if production and is_demo:
+            raise ValidationError("正式模式禁止创建演示账户")
+        self.validate_password(password, production=production)
         digest, salt = hash_password(password)
         try:
             cur = self.db.execute(
                 """
-                INSERT INTO users(username, password_hash, salt, role, display_name, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
+                INSERT INTO users(
+                    username, password_hash, salt, role, display_name,
+                    is_active, is_demo, created_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (username, digest, salt, role, display_name, now_iso()),
+                (username, digest, salt, role, display_name, 1 if is_demo else 0, now_iso()),
             )
         except Exception as exc:  # noqa: BLE001
             raise ValidationError(f"无法创建用户: {exc}") from exc
@@ -91,7 +120,7 @@ class AuthService:
             "user.create",
             "users",
             uid,
-            {"username": username, "role": role},
+            {"username": username, "role": role, "is_demo": is_demo},
         )
         return uid
 
@@ -102,6 +131,15 @@ class AuthService:
         if not row or not verify_password(password, row["password_hash"], row["salt"]):
             self.audit.log(None, "auth.failed", "users", None, {"username": username})
             raise AuthError("用户名或密码错误")
+        # Block demo accounts if mode is production
+        mode_row = self.db.fetchone(
+            "SELECT value FROM app_settings WHERE key='app_mode'"
+        )
+        if mode_row and mode_row["value"] == "production" and int(row["is_demo"] or 0) == 1:
+            self.audit.log(
+                None, "auth.demo_blocked", "users", row["id"], {"username": username}
+            )
+            raise AuthError("正式模式禁止使用演示账户登录")
         session = UserSession(
             id=row["id"],
             username=row["username"],

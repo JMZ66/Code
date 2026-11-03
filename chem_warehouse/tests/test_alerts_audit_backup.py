@@ -38,6 +38,9 @@ def test_backup_and_restore(ctx, tmp_path: Path):
     admin = ctx.auth.authenticate("admin", "Admin@123")
     bak = ctx.backup.backup(admin, tmp_path)
     assert bak.exists()
+    assert bak.suffix == ".zip"
+    verified = ctx.backup.verify_archive(bak)
+    assert verified["ok"] is True
 
     # mutate
     ctx.db.execute("UPDATE chemicals SET notes='changed' WHERE name='盐酸'")
@@ -46,7 +49,7 @@ def test_backup_and_restore(ctx, tmp_path: Path):
 
     ctx.backup.restore(admin, bak)
     note2 = ctx.db.fetchone("SELECT notes FROM chemicals WHERE name='盐酸'")
-    assert note2["notes"] != "changed" or "演示" in (note2["notes"] or "")
+    assert "演示" in (note2["notes"] or "")
 
 
 def test_viewer_cannot_backup(ctx, tmp_path: Path):
@@ -70,7 +73,7 @@ def test_inventory_variance_posts_adjustment(ctx):
     ctx.inventory.add_line(wh, sid, int(ctr["id"]), counted, "少了15")
     lines = ctx.inventory.close_session(wh, sid, post_adjustments=True)
     assert len(lines) == 1
-    assert lines[0]["difference"] == pytest.approx(-15)
+    assert lines[0]["settle_difference"] == pytest.approx(-15)
     after = ctx.db.fetchone("SELECT quantity FROM containers WHERE id=?", (ctr["id"],))
     assert float(after["quantity"]) == pytest.approx(counted)
 
