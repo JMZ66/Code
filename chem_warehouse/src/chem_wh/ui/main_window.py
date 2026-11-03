@@ -39,7 +39,9 @@ class MainWindow(QMainWindow):
         self.ctx = ctx
         user = ctx.current_user
         assert user is not None
-        self.setWindowTitle(f"{APP_NAME} v{__version__} — {user.display_name} ({user.role})")
+        self.setWindowTitle(
+            f"{APP_NAME} v{__version__} [{ctx.mode}] — {user.display_name} ({user.role})"
+        )
         self.resize(1180, 760)
 
         root = QWidget()
@@ -483,7 +485,6 @@ class MainWindow(QMainWindow):
             containers = self.ctx.chemicals.list_containers(status="in_stock")
             if not containers:
                 raise AppError("无在库容器")
-            # Demo: ask counted qty for first container only via dialog loop limited
             for ctr in containers[:5]:
                 val, ok = QInputDialog.getDouble(
                     self,
@@ -499,8 +500,25 @@ class MainWindow(QMainWindow):
                 self.ctx.inventory.add_line(
                     self.ctx.current_user, sid, int(ctr["id"]), float(val)
                 )
-            lines = self.ctx.inventory.close_session(self.ctx.current_user, sid, True)
-            self._info(f"盘点会话 {sid} 已关闭，共 {len(lines)} 行，差异已生成调整事务")
+            reviewer = None
+            ru, ok_u = QInputDialog.getText(
+                self, "盘点复核（管制品必填）", "复核人用户名（无管制差异可留空取消）:"
+            )
+            if ok_u and ru.strip():
+                from PySide6.QtWidgets import QLineEdit
+
+                rp, ok_p = QInputDialog.getText(
+                    self, "盘点复核", "复核人密码:", QLineEdit.EchoMode.Password
+                )
+                if not ok_p:
+                    raise AppError("已取消复核")
+                reviewer = self.ctx.auth.verify_second_user(
+                    self.ctx.current_user, ru.strip(), rp
+                )
+            lines = self.ctx.inventory.close_session(
+                self.ctx.current_user, sid, True, reviewer=reviewer
+            )
+            self._info(f"盘点会话 {sid} 已关闭，共 {len(lines)} 行")
             self.refresh_containers()
             self.refresh_transactions()
             variances = self.ctx.inventory.variance_report(sid)
@@ -510,13 +528,13 @@ class MainWindow(QMainWindow):
                     r["chemical_name"],
                     r["book_qty"],
                     r["counted_qty"],
-                    r["difference"],
+                    r["settle_difference"] if r["settle_difference"] is not None else r["difference"],
                 ]
                 for r in variances
             ]
             self._fill_table(
                 self.summary_table,
-                ["容器", "品名", "账面", "实盘", "差异"],
+                ["容器", "品名", "账面(录入时)", "实盘", "结算差异"],
                 rows,
             )
         except AppError as exc:

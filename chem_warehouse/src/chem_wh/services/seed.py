@@ -109,6 +109,14 @@ DEMO_CHEMICALS = [
 
 
 def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
+    """仅演示模式可调用。正式模式调用将抛错。"""
+    from chem_wh.services.settings import SettingsService
+
+    settings = SettingsService(db)
+    settings.assert_demo_allowed()
+    if settings.get_mode() == "unset":
+        settings.set_mode("demo")
+
     audit = AuditService(db)
     auth = AuthService(db, audit)
     chem = ChemicalService(db, auth, audit)
@@ -119,7 +127,7 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
         return {"skipped": True, "reason": "already_seeded"}
 
     for username, password, role, display in DEMO_USERS:
-        auth.create_user(username, password, role, display)
+        auth.create_user(username, password, role, display, is_demo=True, production=False)
 
     admin = auth.authenticate("admin", "Admin@123")
     safety = auth.authenticate("safety1", "Sf@12345")
@@ -169,6 +177,7 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
             manufacturer=item["manufacturer"],
             controlled_flags=item["controlled_flags"],
             notes="演示数据，分类与管制标识须单位授权人员复核",
+            is_demo=True,
         )
         chem.review_hazard(safety, cid, "approved")
         hz = hz_corr if "酸" in item["name"] or item["name"] == "过氧化氢" else hz_flam
