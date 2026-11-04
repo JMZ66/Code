@@ -1,0 +1,62 @@
+name: LCMS KnowledgeBase
+
+on:
+  push:
+    paths:
+      - "lcms_knowledgebase/**"
+      - ".github/workflows/lcms-knowledgebase.yml"
+  pull_request:
+    paths:
+      - "lcms_knowledgebase/**"
+      - ".github/workflows/lcms-knowledgebase.yml"
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: lcms_knowledgebase
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q --tb=short
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Build portable Windows folder
+        run: python -m PyInstaller packaging/lcms_knowledgebase.spec --noconfirm --clean
+
+      - name: Self-test, then repeat with outbound firewall block
+        shell: pwsh
+        working-directory: lcms_knowledgebase
+        run: |
+          $exe = (Resolve-Path "dist/LCMS_KnowledgeBase/LCMS_KnowledgeBase.exe").Path
+          Write-Host "Runner OS: $([Environment]::OSVersion.VersionString)"
+          & $exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "self-test failed before the firewall rule" }
+          netsh advfirewall firewall add rule name="LCMS_BlockOut" dir=out action=block program="$exe" enable=yes
+          & $exe --self-test
+          $code = $LASTEXITCODE
+          netsh advfirewall firewall delete rule name="LCMS_BlockOut"
+          if ($code -ne 0) { throw "self-test failed while outbound traffic for the exe was blocked" }
+
+      - name: Zip portable folder
+        shell: pwsh
+        working-directory: lcms_knowledgebase
+        run: |
+          Compress-Archive -Path "dist/LCMS_KnowledgeBase" -DestinationPath "dist/LCMS_KnowledgeBase-win64.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LCMS_KnowledgeBase-win64
+          path: lcms_knowledgebase/dist/LCMS_KnowledgeBase-win64.zip
+          if-no-files-found: error

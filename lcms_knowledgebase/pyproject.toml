@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lcms-knowledgebase"
+version = "1.0.0"
+description = "离线 LC-MS 谱图浏览与自建知识库"
+requires-python = ">=3.10"
+readme = "README.md"
+license = "MIT"
+dependencies = [
+    "pyteomics==5.0.2",
+    "psims==1.4.0",
+    "matchms==0.33.1",
+    "PySide6==6.12.0",
+    "numpy==2.5.4",
+    "matplotlib==3.11.2",
+    "openpyxl==3.1.5",
+    "reportlab==5.1.0",
+    "lxml==6.1.3",
+]
+
+[project.scripts]
+lcms-knowledgebase = "lcms_kb.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lcms_kb = ["resources/fonts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+qt_api = "pyside6"
+addopts = "-q"
