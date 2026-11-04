@@ -56,10 +56,14 @@ jobs:
           if (Test-Path dist/GCMS_KnowledgeBase-win64.zip) { Remove-Item dist/GCMS_KnowledgeBase-win64.zip }
           Compress-Archive -Path dist/GCMS_KnowledgeBase -DestinationPath dist/GCMS_KnowledgeBase-win64.zip
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: GCMS_KnowledgeBase-win64
           path: |
             gcms_knowledgebase/dist/GCMS_KnowledgeBase-win64.zip
             gcms_knowledgebase/dist/GCMS_KnowledgeBase/offline-probe.txt
             gcms_knowledgebase/dist/GCMS_KnowledgeBase/selftest.log
-          if-no-files-found: error
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/*.stdout.txt
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/*.stderr.txt
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/gcms_boot.log
+          if-no-files-found: warn

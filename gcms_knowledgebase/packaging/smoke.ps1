@@ -10,22 +10,34 @@ if (Test-Path $selfLog) { Remove-Item $selfLog }
 Set-Content -Path $log -Value "exe=$exePath" -Encoding utf8
 
 function Invoke-Exe {
-    param([string[]]$ArgumentList)
-    $proc = Start-Process -FilePath $exePath -ArgumentList $ArgumentList -Wait -PassThru -WindowStyle Hidden
-    if ($null -eq $proc.ExitCode) { return -1 }
-    return [int]$proc.ExitCode
+    param([string]$ArgumentLine, [string]$Tag)
+    $stdout = Join-Path $outDir "$Tag.stdout.txt"
+    $stderr = Join-Path $outDir "$Tag.stderr.txt"
+    try {
+        $proc = Start-Process -FilePath $exePath -ArgumentList $ArgumentLine -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    } catch {
+        Add-Content -Path $log -Value "$Tag START_FAIL $($_)" -Encoding utf8
+        return -1
+    }
+    $code = if ($null -eq $proc.ExitCode) { -1 } else { [int]$proc.ExitCode }
+    Add-Content -Path $log -Value "$Tag $code args=$ArgumentLine" -Encoding utf8
+    foreach ($path in @($stdout, $stderr)) {
+        if (Test-Path $path) {
+            Add-Content -Path $log -Value ("--- " + (Split-Path $path -Leaf) + " ---") -Encoding utf8
+            Add-Content -Path $log -Value (Get-Content -Path $path -Raw) -Encoding utf8
+        }
+    }
+    return $code
 }
 
-$before = Invoke-Exe @("--net-probe")
-Add-Content -Path $log -Value "BEFORE $before" -Encoding utf8
+$env:QT_QPA_PLATFORM = "offscreen"
+$before = Invoke-Exe "--net-probe" "BEFORE"
 $rule = "GCMS_KnowledgeBase_BlockOutbound"
 netsh advfirewall firewall delete rule name="$rule" | Out-Null
 netsh advfirewall firewall add rule name="$rule" dir=out action=block program="$exePath" enable=yes | Out-Null
 try {
-    $after = Invoke-Exe @("--net-probe")
-    Add-Content -Path $log -Value "AFTER_BLOCK $after" -Encoding utf8
-    $self = Invoke-Exe @("--self-test", "--self-test-log", $selfLog)
-    Add-Content -Path $log -Value "SELFTEST $self" -Encoding utf8
+    $after = Invoke-Exe "--net-probe" "AFTER_BLOCK"
+    $self = Invoke-Exe "--self-test --self-test-log `"$selfLog`"" "SELFTEST"
     if (Test-Path $selfLog) {
         Add-Content -Path $log -Value (Get-Content -Path $selfLog -Raw) -Encoding utf8
     } else {
@@ -50,4 +62,6 @@ try {
 }
 finally {
     netsh advfirewall firewall delete rule name="$rule" | Out-Null
+    Write-Host "----- offline-probe.txt -----"
+    if (Test-Path $log) { Get-Content -Path $log | Write-Host }
 }

@@ -33,8 +33,8 @@ def _install_crash_log(data_dir: Path) -> None:
 
 
 def run_self_test(mzml: Path, log_path: str | None) -> int:
-    # Windows 上使用 Qt 自带的 windows 平台插件。强制 offscreen 需要额外的 qoffscreen 插件，
-    # 打包后不一定在。Linux 测试机没有桌面，才使用 offscreen。
+    # 冒烟测试会设置 QT_QPA_PLATFORM=offscreen。没设置时，Windows 用自带的 windows 插件，
+    # Linux 没有桌面才用 offscreen。qoffscreen.dll 已随 PySide6 打进目录。
     if sys.platform != "win32":
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -79,16 +79,23 @@ def main(argv: list[str] | None = None) -> int:
 
         return net_probe()
     if args.self_test:
-        if args.self_test == "__bundled__":
-            from gcms_kb.paths import resource_path
+        from gcms_kb.paths import resource_path
 
-            mzml = resource_path("testdata", "public", "small.pwiz.1.1.mzML")
-        else:
-            mzml = Path(args.self_test)
-        if not mzml.is_file():
-            _emit(f"SELF_TEST_FAIL missing {mzml}", args.self_test_log)
+        log_path = args.self_test_log
+        if not log_path and getattr(sys, "frozen", False):
+            log_path = str(Path(sys.executable).resolve().parent / "selftest.log")
+        try:
+            if args.self_test == "__bundled__":
+                mzml = resource_path("testdata", "public", "small.pwiz.1.1.mzML")
+            else:
+                mzml = Path(args.self_test)
+            if not Path(mzml).is_file():
+                _emit(f"SELF_TEST_FAIL missing {mzml}", log_path)
+                return 1
+            return run_self_test(Path(mzml), log_path)
+        except Exception:
+            _emit("SELF_TEST_FAIL\n" + traceback.format_exc(), log_path)
             return 1
-        return run_self_test(mzml, args.self_test_log)
 
     from PySide6.QtGui import QFont, QFontDatabase
     from PySide6.QtWidgets import QApplication
