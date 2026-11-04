@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -119,9 +120,16 @@ def main(argv: list[str] | None = None) -> None:
         app.processEvents()
         raise SystemExit(0)
     if args.self_test:
-        from chem_wh.selftest import run_self_test
+        from chem_wh.selftest import append_log, run_self_test
 
-        raise SystemExit(run_self_test(args.db_path, args.self_test_report))
+        log_path = (args.self_test_report + ".log") if args.self_test_report else None
+        append_log(log_path, "main entered self-test")
+        try:
+            code = run_self_test(args.db_path, args.self_test_report, log_path)
+        except Exception:
+            append_log(log_path, traceback.format_exc())
+            code = 1
+        raise SystemExit(code)
     db_path, demo = _resolve_db(args)
     raise SystemExit(run(db_path, demo=demo))
 

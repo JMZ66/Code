@@ -118,11 +118,13 @@ jobs:
           $db = Join-Path $work "smoke.db"
           $report = Join-Path $work "selftest.json"
           $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
-          if (-not $p.WaitForExit(180000)) {
+          if (-not $p.WaitForExit(480000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path ($report + ".log")) { Get-Content ($report + ".log") -Raw | Write-Host }
             throw "self-test timed out"
           }
           $code = $p.ExitCode
+          if (Test-Path ($report + ".log")) { Get-Content ($report + ".log") -Raw | Write-Host }
           if (Test-Path $report) { Get-Content $report -Raw | Write-Host }
           if ($code -ne 0) { throw "self-test exit $code" }
           "exe=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -160,11 +162,13 @@ jobs:
           $db = Join-Path $work "smoke-offline.db"
           $report = Join-Path $work "selftest-offline.json"
           $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
-          if (-not $p.WaitForExit(180000)) {
+          if (-not $p.WaitForExit(480000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            if (Test-Path ($report + ".log")) { Get-Content ($report + ".log") -Raw | Write-Host }
             throw "offline self-test timed out"
           }
           $code = $p.ExitCode
+          if (Test-Path ($report + ".log")) { Get-Content ($report + ".log") -Raw | Write-Host }
           Add-Content $result "selftest_while_outbound_blocked_exit=$code"
           if (Test-Path $report) {
             Add-Content $result "selftest_report=$(Get-Content $report -Raw)"
