@@ -1,0 +1,15 @@
+NAME: 【合成示例，不能用于鉴定】组分A
+COMMENT: 合成数据，不是真实标准品谱图，只用于练习 MSP 导入
+RETENTIONINDEX: 1050
+NUM PEAKS: 3
+65 200
+91 999
+92 80
+
+NAME: 【合成示例，不能用于鉴定】组分B
+COMMENT: 合成数据，不是真实标准品谱图，只用于练习 MSP 导入
+RETENTIONINDEX: 1120
+NUM PEAKS: 3
+51 150
+77 400
+105 999

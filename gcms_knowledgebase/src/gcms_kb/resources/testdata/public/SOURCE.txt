@@ -1,0 +1,10 @@
+small.pwiz.1.1.mzML
+
+来源：ProteoWizard 仓库 example_data/small.pwiz.1.1.mzML
+https://github.com/ProteoWizard/pwiz/blob/master/example_data/small.pwiz.1.1.mzML
+ProteoWizard 核心代码与该示例文件随仓库以 Apache-2.0 提供。
+
+本文件保留原样，仅用于 mzML 读取测试和程序自检。
+文件内的 filter string 为：
+FTMS + p ESI Full ms [200.00-2000.00]
+这是电喷雾全扫描示例，不是 GC-MS EI，也不是本实验室的仪器数据。

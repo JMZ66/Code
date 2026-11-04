@@ -1,0 +1,69 @@
+name: GCMS KnowledgeBase
+
+on:
+  pull_request:
+    paths:
+      - "gcms_knowledgebase/**"
+      - ".github/workflows/gcms-knowledgebase.yml"
+      - ".github/workflows/gcms-release.yml"
+  push:
+    branches: [main]
+    paths:
+      - "gcms_knowledgebase/**"
+      - ".github/workflows/gcms-knowledgebase.yml"
+      - ".github/workflows/gcms-release.yml"
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gcms_knowledgebase/pyproject.toml
+      - name: Install
+        working-directory: gcms_knowledgebase
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev]"
+      - name: Test
+        working-directory: gcms_knowledgebase
+        run: python -m pytest -q --tb=short
+      - name: Build portable folder
+        working-directory: gcms_knowledgebase
+        run: python -m PyInstaller packaging/GCMS_KnowledgeBase.spec --noconfirm --clean
+      - name: Add docs and launcher
+        working-directory: gcms_knowledgebase
+        shell: pwsh
+        run: |
+          $dest = "dist/GCMS_KnowledgeBase"
+          Copy-Item README.md,使用说明.md,测试报告.md,兼容性说明.md,THIRD_PARTY_LICENSES.md $dest
+          Copy-Item packaging/启动GCMS知识库.bat $dest
+          Copy-Item -Recurse licenses $dest
+      - name: Smoke test and offline probe
+        working-directory: gcms_knowledgebase
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File packaging/smoke.ps1 -Exe (Resolve-Path dist/GCMS_KnowledgeBase/GCMS_KnowledgeBase.exe)
+      - name: Zip
+        working-directory: gcms_knowledgebase
+        shell: pwsh
+        run: |
+          if (Test-Path dist/GCMS_KnowledgeBase-win64.zip) { Remove-Item dist/GCMS_KnowledgeBase-win64.zip }
+          Compress-Archive -Path dist/GCMS_KnowledgeBase -DestinationPath dist/GCMS_KnowledgeBase-win64.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GCMS_KnowledgeBase-win64
+          path: |
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase-win64.zip
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/offline-probe.txt
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/selftest.log
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/*.stdout.txt
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/*.stderr.txt
+            gcms_knowledgebase/dist/GCMS_KnowledgeBase/gcms_boot.log
+          if-no-files-found: warn
