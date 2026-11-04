@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import socket
+import traceback
+from datetime import datetime
 from pathlib import Path
 
 from chem_wh import __version__
@@ -32,15 +34,30 @@ def _guard_network():
     return restore
 
 
-def run_self_test(db_path: str | None = None, report_path: str | None = None) -> int:
+def append_log(path: str | None, message: str) -> None:
+    if not path:
+        return
+    stamp = datetime.now().isoformat(timespec="seconds")
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(f"{stamp} {message}\n")
+        handle.flush()
+
+
+def run_self_test(
+    db_path: str | None = None,
+    report_path: str | None = None,
+    log_path: str | None = None,
+) -> int:
+    append_log(log_path, "run_self_test start")
     restore = _guard_network()
     try:
-        return _run(db_path, report_path)
+        return _run(db_path, report_path, log_path)
     finally:
         restore()
+        append_log(log_path, "run_self_test finished")
 
 
-def _run(db_path: str | None, report_path: str | None) -> int:
+def _run(db_path: str | None, report_path: str | None, log_path: str | None = None) -> int:
     from chem_wh.app_context import AppContext
 
     checks: list[str] = []
@@ -53,6 +70,7 @@ def _run(db_path: str | None, report_path: str | None) -> int:
     }
     ctx = None
     try:
+        append_log(log_path, "opening database")
         if not db_path:
             raise RuntimeError("self-test 必须显式传入一个尚不存在的 --db 路径")
         path = Path(db_path)
@@ -65,6 +83,7 @@ def _run(db_path: str | None, report_path: str | None) -> int:
         if str(ctx.db.conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
             raise RuntimeError("SQLite 未处于 WAL 模式")
         checks.append("pragma")
+        append_log(log_path, "pragma ok")
         ctx.initialize_mode("production")
         ctx.bootstrap_production_admin("selftest_admin", "SelfTest#2026a", "自检管理员")
         admin = ctx.auth.authenticate("selftest_admin", "SelfTest#2026a")
@@ -87,6 +106,7 @@ def _run(db_path: str | None, report_path: str | None) -> int:
         keeper = ctx.auth.authenticate("selftest_keeper", "SelfTest#2026b")
         reviewer = ctx.auth.authenticate("selftest_reviewer", "SelfTest#2026c")
         checks.append("users")
+        append_log(log_path, "users ok")
         loc = ctx.chemicals.add_location(
             admin, level="warehouse", code="ST", name="自检库", storage_condition="阴凉"
         )
@@ -222,6 +242,7 @@ def _run(db_path: str | None, report_path: str | None) -> int:
     except Exception as exc:  # noqa: BLE001
         payload["ok"] = False
         payload["error"] = str(exc)
+        append_log(log_path, traceback.format_exc())
         return _finish(report_path, payload, 1)
     finally:
         if ctx is not None:
