@@ -4,6 +4,8 @@
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 root = Path(SPECPATH).resolve().parent
 
 datas = [
@@ -28,7 +30,8 @@ a = Analysis(
         "PIL.Image",
         "openpyxl",
         "_hashlib",
-    ],
+    ]
+    + collect_submodules("reportlab.graphics.barcode"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
