@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gcms-knowledgebase"
+version = "1.0.0"
+description = "离线 GC-MS 谱图知识库（Windows 桌面）"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "GCMS KnowledgeBase"}]
+dependencies = [
+  "PySide6==6.12.0",
+  "numpy==2.5.4",
+  "scipy==1.16.3",
+  "pyteomics==5.0.2",
+  "matchms==0.33.1",
+  "openpyxl==3.1.5",
+  "reportlab==5.1.0",
+  "pyqtgraph==0.14.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0", "pytest-qt==4.5.0", "pypdf==6.21.4", "pyinstaller==6.22.3"]
+
+[project.scripts]
+gcms-knowledgebase = "gcms_kb.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gcms_kb = [
+  "resources/fonts/*",
+  "resources/testdata/public/*",
+  "resources/examples/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+qt_api = "pyside6"
+addopts = "-q --tb=short"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
