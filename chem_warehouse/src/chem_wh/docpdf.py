@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -71,12 +72,12 @@ def render_packaged_docs(out_dir: Path) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="生成中文手册 PDF")
+    parser = argparse.ArgumentParser(description="render Chinese manual PDFs")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     paths = render_packaged_docs(Path(args.out))
     for path in paths:
-        print(path)
+        sys.stdout.buffer.write((str(path) + "\n").encode("utf-8", errors="replace"))
 
 
 if __name__ == "__main__":
