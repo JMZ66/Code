@@ -18,9 +18,6 @@ UninstallDisplayIcon={app}\ChemWarehouse.exe
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 
-[Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-
 [Files]
 Source: "..\dist\ChemWarehouse\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

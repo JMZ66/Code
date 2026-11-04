@@ -252,12 +252,12 @@ jobs:
           $assets = @(
             (Resolve-Path dist\*.zip).Path,
             (Resolve-Path dist\SHA256SUMS.txt).Path,
-            (Resolve-Path windows-verification.txt).Path,
-            (Resolve-Path docs\用户手册.md).Path,
-            (Resolve-Path docs\测试报告.md).Path
+            (Resolve-Path windows-verification.txt).Path
           )
+          Copy-Item docs\用户手册.md user-manual.md -Force
+          Copy-Item docs\测试报告.md test-report.md -Force
+          $assets += (Resolve-Path user-manual.md).Path
+          $assets += (Resolve-Path test-report.md).Path
           $setup = Get-ChildItem dist\ChemWarehouse-*-windows-setup.exe -ErrorAction SilentlyContinue
           if ($setup) { $assets += $setup.FullName }
-          $pdf = Get-ChildItem dist\ChemWarehouse\docs\*.pdf -ErrorAction SilentlyContinue
-          if ($pdf) { $assets += $pdf.FullName }
           gh release create $tag --title "危化品仓库管理系统 $tag" --notes-file release-notes.md @assets
