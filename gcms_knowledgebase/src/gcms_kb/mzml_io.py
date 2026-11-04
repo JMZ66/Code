@@ -15,13 +15,17 @@ _CV = None
 
 
 def _offline_cv():
-    """使用 psims 自带的 PSI-MS 词表，避免 pyteomics 去联网下载 obo。"""
+    """读取随程序打包的 PSI-MS 词表，避免 pyteomics 去联网，也不依赖 psims 安装目录里的数据文件。"""
     global _CV
     if _CV is None:
-        from psims.controlled_vocabulary.controlled_vocabulary import ControlledVocabulary
-        from psims.controlled_vocabulary.vendor import _use_vendored_psims_obo
+        import gzip
 
-        _CV = ControlledVocabulary.from_obo(_use_vendored_psims_obo())
+        from psims.controlled_vocabulary.controlled_vocabulary import ControlledVocabulary
+
+        from gcms_kb.paths import resource_path
+
+        with gzip.open(resource_path("obo", "psi-ms.obo.gz"), "rb") as handle:
+            _CV = ControlledVocabulary.from_obo(handle)
     return _CV
 
 

@@ -1,0 +1,5 @@
+psi-ms.obo.gz
+
+来源：psims 1.4.0 自带的 PSI-MS 受控词表副本，data-version 4.1.258。
+词表原文声明采用 Creative Commons Attribution 4.0 International (CC BY 4.0)。
+放在程序自己的 resources 里，是为了打包后的 exe 不必再去 psims 安装目录找文件，也不必联网下载。

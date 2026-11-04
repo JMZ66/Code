@@ -45,7 +45,8 @@ NIST 网站提供 AMDIS，并另有 EULA（常见链接为 `EULA-AMDIS.pdf`）�
 | numpy | 2.5.4 | BSD | 数组 |
 | scipy | 1.16.3 | BSD | 找峰、Savitzky-Golay、nnls |
 | pyteomics | 5.0.2 | Apache-2.0 | 读 mzML |
-| psims | 1.4.0 | Apache-2.0 | pyteomics 5 的受控词表。使用它自带的 psi-ms.obo，不联网下载 |
+| psims | 1.4.0 | Apache-2.0 | 只用来解析随包的 PSI-MS 词表 |
+| PSI-MS obo | data-version 4.1.258 | CC BY 4.0 | `resources/obo/psi-ms.obo.gz`，供 pyteomics 离线解析 mzML |
 | matchms | 0.33.1 | Apache-2.0 | 余弦相似度和 MSP 读写 |
 | rdkit | 随 matchms 安装，本次 2026.9.1 | BSD-3-Clause | matchms 导入时会加载。本程序不用它算结构 |
 | numba | 随 matchms | BSD | matchms 依赖 |

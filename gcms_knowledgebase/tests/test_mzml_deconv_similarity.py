@@ -6,7 +6,7 @@ from pyteomics import mzml
 
 from gcms_kb.deconvolution import deconvolve
 from gcms_kb.msp_io import read_msp, write_msp
-from gcms_kb.mzml_io import read_mzml, time_unit, write_mzml
+from gcms_kb.mzml_io import _offline_cv, read_mzml, time_unit, write_mzml
 from gcms_kb.similarity import cosine_scores
 
 PUBLIC_MZML = (
@@ -67,7 +67,7 @@ def test_public_thermo_mzml_tic_matches_pyteomics():
     unit = time_unit(PUBLIC_MZML)
     run = read_mzml(PUBLIC_MZML)
     pairs = []
-    with mzml.MzML(str(PUBLIC_MZML)) as reader:
+    with mzml.MzML(str(PUBLIC_MZML), read_schema=False, huge_tree=True, cv=_offline_cv()) as reader:
         for spectrum in reader:
             level = int(spectrum.get("ms level") or 1)
             if level != 1:
