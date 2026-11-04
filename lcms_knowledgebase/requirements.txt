@@ -1,0 +1,9 @@
+pyteomics==5.0.2
+psims==1.4.0
+matchms==0.33.1
+PySide6==6.12.0
+numpy==2.5.4
+matplotlib==3.11.2
+openpyxl==3.1.5
+reportlab==5.1.0
+lxml==6.1.3
