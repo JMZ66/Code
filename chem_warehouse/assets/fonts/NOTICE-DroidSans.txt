@@ -1,0 +1,9 @@
+Droid Sans Fallback
+Copyright 2006-2010 Google Corp.
+Droid is a trademark of Google Corp.
+
+Licensed under the Apache License, Version 2.0.
+The full license text is in Apache-2.0.txt in this directory.
+
+This font is bundled so the warehouse application can embed Chinese glyphs
+in PDF reports on offline Windows PCs. It is not a certification mark.

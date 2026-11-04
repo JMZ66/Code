@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(ROOT))
+
+from chem_wh.app_context import AppContext  # noqa: E402
+
+
+@pytest.fixture()
+def ctx(tmp_path: Path) -> AppContext:
+    db = tmp_path / "test.db"
+    app = AppContext(db)
+    app.initialize_mode("demo")
+    app.ensure_seed()
+    yield app
+    app.close()
+
+
+@pytest.fixture()
+def prod_ctx(tmp_path: Path) -> AppContext:
+    db = tmp_path / "prod.db"
+    app = AppContext(db)
+    app.initialize_mode("production")
+    yield app
+    app.close()

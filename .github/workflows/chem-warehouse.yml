@@ -1,0 +1,247 @@
+name: chem-warehouse
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "chem_warehouse/**"
+      - ".github/workflows/chem-warehouse.yml"
+  pull_request:
+    paths:
+      - "chem_warehouse/**"
+      - ".github/workflows/chem-warehouse.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chem-warehouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux:
+    name: pytest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chem_warehouse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Qt libraries for offscreen tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libglib2.0-0 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libxcb-cursor0 libnss3 libxcomposite1 libxdamage1 libxrandr2 libxi6 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: python -m pytest tests -q --tb=short
+
+  test-windows:
+    name: pytest (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: chem_warehouse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "This runner is Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: python -m pytest tests -q --tb=short
+
+  package-windows:
+    name: package and offline smoke (windows-latest)
+    needs: [test-linux, test-windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: chem_warehouse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "Packaging runs on Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Build portable folder
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+      - name: Require the desktop Qt plugin to be packaged
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Recurse dist\ChemWarehouse -Filter qwindows.dll
+          if (-not $dll) { throw "qwindows.dll was not packaged; a desktop launch would fail." }
+          Write-Host "Packaged:" $dll.FullName
+      - name: Offscreen GUI probe of the built EXE
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = (Resolve-Path dist\ChemWarehouse\ChemWarehouse.exe).Path
+          & $exe --gui-probe
+          if ($LASTEXITCODE -ne 0) { throw "gui-probe exit $LASTEXITCODE" }
+      - name: Self-test the built EXE
+        id: selftest
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist\ChemWarehouse\ChemWarehouse.exe).Path
+          $work = Join-Path $env:RUNNER_TEMP "chemwh-smoke"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $db = Join-Path $work "smoke.db"
+          $report = Join-Path $work "selftest.json"
+          & $exe --self-test --db $db --self-test-report $report
+          $code = $LASTEXITCODE
+          if (Test-Path $report) { Get-Content $report -Raw | Write-Host }
+          if ($code -ne 0) { throw "self-test exit $code" }
+          "exe=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "work=$work" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Self-test again with outbound traffic blocked
+        shell: pwsh
+        run: |
+          $exe = $env:exe
+          $work = $env:work
+          $rule = "chemwh-block-outbound-ci"
+          $log = Join-Path $work "pfirewall.log"
+          $result = Join-Path (Get-Location) "windows-verification.txt"
+          $os = Get-CimInstance Win32_OperatingSystem
+          @(
+            "runner_caption=$($os.Caption)"
+            "runner_version=$($os.Version)"
+            "runner_build=$($os.BuildNumber)"
+            "note=GitHub-hosted windows-latest is Windows Server, not desktop Windows 10 or 11."
+            "exe=$exe"
+            "selftest_before_firewall=passed"
+          ) | Set-Content -Path $result -Encoding utf8
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
+          Add-Content $result "firewall_rule=outbound block for this exe"
+          $logSet = $true
+          try {
+            netsh advfirewall set allprofiles logging filename "$log" | Out-Null
+            netsh advfirewall set allprofiles logging maxfilesize 32767 | Out-Null
+            netsh advfirewall set allprofiles logging droppedconnections enable | Out-Null
+            Add-Content $result "firewall_log=$log"
+          } catch {
+            $logSet = $false
+            Add-Content $result "firewall_log_error=$($_.Exception.Message)"
+          }
+          $db = Join-Path $work "smoke-offline.db"
+          $report = Join-Path $work "selftest-offline.json"
+          & $exe --self-test --db $db --self-test-report $report
+          $code = $LASTEXITCODE
+          Add-Content $result "selftest_while_outbound_blocked_exit=$code"
+          if (Test-Path $report) {
+            Add-Content $result "selftest_report=$(Get-Content $report -Raw)"
+          }
+          if ($logSet -and (Test-Path $log)) {
+            $hits = @(Select-String -Path $log -Pattern "ChemWarehouse" -SimpleMatch -ErrorAction SilentlyContinue)
+            Add-Content $result "firewall_log_lines_mentioning_exe=$($hits.Count)"
+            if ($hits.Count -eq 0) {
+              Add-Content $result "firewall_log_conclusion=no dropped-connection line named this exe while the block rule was active and the self-test passed. This shows the packaged program completed with outbound blocked; it does not prove a packet capture of every socket."
+            } else {
+              Add-Content $result "firewall_log_conclusion=the firewall log recorded activity for this exe. See the matching lines below."
+              $hits | Select-Object -First 20 | ForEach-Object { Add-Content $result $_.Line }
+            }
+          } else {
+            Add-Content $result "firewall_log_conclusion=logging was not available. The self-test exit code under the outbound block rule is the result that was actually observed."
+          }
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          Get-Content $result
+          if ($code -ne 0) { throw "offline self-test exit $code" }
+      - name: Copy verification into the portable folder and zip it
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\ChemWarehouse\docs | Out-Null
+          Copy-Item windows-verification.txt dist\ChemWarehouse\docs\windows-verification.txt -Force
+          Copy-Item docs\测试报告.md dist\ChemWarehouse\docs\测试报告.md -Force
+          $ver = python -c "import sys; sys.path.insert(0,'src'); from chem_wh import __version__; print(__version__)"
+          $zip = "dist\ChemWarehouse-$ver-windows-portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path dist\ChemWarehouse -DestinationPath $zip
+          Get-FileHash $zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $zip -Leaf)" } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Add-Content dist\SHA256SUMS.txt "$(Get-FileHash windows-verification.txt -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  windows-verification.txt"
+      - name: Build installer
+        id: inno
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP "innosetup.exe"
+          Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_4_0/innosetup-6.4.0.exe" -OutFile $setup
+          & $setup /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          & $iscc packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC exit $LASTEXITCODE" }
+          $installer = Get-ChildItem dist\ChemWarehouse-*-windows-setup.exe | Select-Object -First 1
+          if (-not $installer) { throw "installer exe missing" }
+          Add-Content dist\SHA256SUMS.txt "$(Get-FileHash $installer.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  $($installer.Name)"
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chem-warehouse-windows
+          path: |
+            chem_warehouse/dist/*.zip
+            chem_warehouse/dist/*.exe
+            chem_warehouse/dist/SHA256SUMS.txt
+            chem_warehouse/windows-verification.txt
+            chem_warehouse/docs/用户手册.md
+            chem_warehouse/docs/测试报告.md
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $run = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $inno = if ('${{ steps.inno.outcome }}' -eq 'success') { '已生成安装包。' } else { '安装包这一步没有成功，发布里只有便携版压缩包。失败原因见本工作流日志，不要把它写成已提供安装包。' }
+          @(
+            "## 危化品仓库管理系统 $tag"
+            ""
+            "单机离线台账。不能替代危险化学品法定安全管理。"
+            ""
+            "- 便携版：解压后双击 ChemWarehouse.exe"
+            "- 运行器：GitHub windows-latest，是 Windows Server，不是 Windows 10/11 桌面"
+            "- 本工作流：$run"
+            "- 安装包：$inno"
+            "- 请阅读压缩包里的 docs\用户手册.pdf 和 docs\windows-verification.txt"
+            ""
+            "在您自己的 Windows 10 或 11 电脑上还需要看一次：能否启动、扫码枪、标签打印、Excel/PDF 中文，以及 SmartScreen（程序未签名）。"
+          ) | Set-Content -Path release-notes.md -Encoding utf8
+          $assets = @(
+            (Resolve-Path dist\*.zip).Path,
+            (Resolve-Path dist\SHA256SUMS.txt).Path,
+            (Resolve-Path windows-verification.txt).Path,
+            (Resolve-Path docs\用户手册.md).Path,
+            (Resolve-Path docs\测试报告.md).Path
+          )
+          $setup = Get-ChildItem dist\ChemWarehouse-*-windows-setup.exe -ErrorAction SilentlyContinue
+          if ($setup) { $assets += $setup.FullName }
+          $pdf = Get-ChildItem dist\ChemWarehouse\docs\*.pdf -ErrorAction SilentlyContinue
+          if ($pdf) { $assets += $pdf.FullName }
+          gh release create $tag --title "危化品仓库管理系统 $tag" --notes-file release-notes.md @assets
