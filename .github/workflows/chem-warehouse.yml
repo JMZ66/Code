@@ -1,12 +1,12 @@
 name: chem-warehouse
 
 on:
+  # Tag pushes have no file diff, so a paths filter would skip the release.
   push:
-    branches: ["**"]
-    tags: ["v*"]
-    paths:
-      - "chem_warehouse/**"
-      - ".github/workflows/chem-warehouse.yml"
+    branches:
+      - main
+    tags:
+      - "v*"
   pull_request:
     paths:
       - "chem_warehouse/**"
