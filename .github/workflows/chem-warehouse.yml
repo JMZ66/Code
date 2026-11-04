@@ -102,8 +102,12 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           $exe = (Resolve-Path dist\ChemWarehouse\ChemWarehouse.exe).Path
-          & $exe --gui-probe
-          if ($LASTEXITCODE -ne 0) { throw "gui-probe exit $LASTEXITCODE" }
+          $p = Start-Process -FilePath $exe -ArgumentList "--gui-probe" -PassThru
+          if (-not $p.WaitForExit(120000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "gui-probe timed out"
+          }
+          if ($p.ExitCode -ne 0) { throw "gui-probe exit $($p.ExitCode)" }
       - name: Self-test the built EXE
         id: selftest
         shell: pwsh
@@ -113,8 +117,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $db = Join-Path $work "smoke.db"
           $report = Join-Path $work "selftest.json"
-          & $exe --self-test --db $db --self-test-report $report
-          $code = $LASTEXITCODE
+          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "self-test timed out"
+          }
+          $code = $p.ExitCode
           if (Test-Path $report) { Get-Content $report -Raw | Write-Host }
           if ($code -ne 0) { throw "self-test exit $code" }
           "exe=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -151,8 +159,12 @@ jobs:
           }
           $db = Join-Path $work "smoke-offline.db"
           $report = Join-Path $work "selftest-offline.json"
-          & $exe --self-test --db $db --self-test-report $report
-          $code = $LASTEXITCODE
+          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "offline self-test timed out"
+          }
+          $code = $p.ExitCode
           Add-Content $result "selftest_while_outbound_blocked_exit=$code"
           if (Test-Path $report) {
             Add-Content $result "selftest_report=$(Get-Content $report -Raw)"
