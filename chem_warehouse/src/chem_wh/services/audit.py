@@ -4,6 +4,7 @@ import json
 from typing import Any, Optional
 
 from chem_wh.db.database import Database
+from chem_wh.services.exceptions import PermissionError
 from chem_wh.utils.integrity import GENESIS_HASH, chain_hash
 from chem_wh.utils.timeutil import now_iso
 
@@ -78,6 +79,9 @@ class AuditService:
             if own:
                 c.rollback()
             raise
+
+    def delete_log(self, *_args, **_kwargs) -> None:
+        raise PermissionError("审计日志只允许追加，界面和接口都不能删除或修改")
 
     def list_recent(self, limit: int = 100) -> list:
         return self.db.fetchall(

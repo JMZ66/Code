@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Literal
 
 from chem_wh.db.database import Database
-from chem_wh.services.exceptions import ValidationError
+from chem_wh.services.auth import UserSession
+from chem_wh.services.exceptions import PermissionError, ValidationError
 from chem_wh.utils.timeutil import now_iso
 
 AppMode = Literal["demo", "production", "unset"]
@@ -58,3 +59,19 @@ class SettingsService:
         mode = self.get_mode()
         if mode == "production":
             raise ValidationError("正式模式禁止加载演示账户、固定密码或模拟危化品数据")
+
+    def get_expiry_warn_days(self) -> int:
+        raw = self.get("expiry_warn_days", "30") or "30"
+        try:
+            days = int(raw)
+        except ValueError:
+            return 30
+        return min(max(days, 1), 3650)
+
+    def set_expiry_warn_days(self, actor: UserSession, days: int) -> None:
+        if not (actor.has("user.manage") or actor.has("chem.review")):
+            raise PermissionError("无权设置效期预警天数")
+        days = int(days)
+        if days < 1 or days > 3650:
+            raise ValidationError("预警天数须在 1 到 3650 之间")
+        self.set("expiry_warn_days", str(days))

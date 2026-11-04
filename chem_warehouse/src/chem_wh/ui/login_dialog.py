@@ -45,14 +45,15 @@ class LoginDialog(QDialog):
 
         mode = ctx.mode
         if mode == "demo":
-            tip_text = "演示模式：admin / Admin@123（仅演示，正式环境禁止）"
-        elif mode == "production":
-            tip_text = "正式模式：无预置账户；禁止演示密码与模拟危化品数据"
+            tip_text = (
+                "演示模式使用独立数据库，示例账户 admin / Admin@123。"
+                "演示数据不能用于真实危化品台账。"
+            )
         else:
-            tip_text = "请先选择运行模式（demo / production）"
-        tip = QLabel(tip_text)
-        tip.setWordWrap(True)
-        tip.setStyleSheet("color: #6b7c85; font-size: 12px;")
+            tip_text = "请使用管理员创建的账户登录。本程序没有预置账户。"
+        self.tip = QLabel(tip_text)
+        self.tip.setWordWrap(True)
+        self.tip.setStyleSheet("color: #6b7c85; font-size: 12px;")
 
         btn = QPushButton("登录")
         btn.clicked.connect(self._do_login)
@@ -67,7 +68,7 @@ class LoginDialog(QDialog):
         layout.addWidget(sub)
         layout.addSpacing(12)
         layout.addLayout(form)
-        layout.addWidget(tip)
+        layout.addWidget(self.tip)
         layout.addLayout(row)
 
         self.setStyleSheet(

@@ -7,6 +7,7 @@ from chem_wh.db.database import Database
 from chem_wh.services.audit import AuditService
 from chem_wh.services.auth import AuthService, UserSession
 from chem_wh.services.exceptions import StockError, ValidationError
+from chem_wh.services.idempotency import lookup, normalize_key, payload_hash, remember
 from chem_wh.utils.codes import next_code
 from chem_wh.utils.integrity import GENESIS_HASH, chain_hash
 from chem_wh.utils.timeutil import now_iso
@@ -19,18 +20,19 @@ TX_EFFECTS = {
     "dispose": -1,
     "adjust_pos": +1,
     "adjust_neg": -1,
-    "reversal": 0,  # sign derived from related tx
+    "reversal": 0,
 }
 
-# Any quantity/location changing op on controlled chemicals requires dual control.
+# Every stock movement of a controlled chemical needs a second person.
 DUAL_CONTROL_TX_TYPES = {
+    "inbound",
     "issue",
-    "dispose",
+    "return",
     "transfer",
+    "dispose",
     "adjust_pos",
     "adjust_neg",
     "reversal",
-    "return",  # controlled return also dual-controlled for完整流向
 }
 
 ALLOWED_STATUS_TRANSITIONS = {
@@ -54,6 +56,13 @@ def _validate_quantity(quantity: float, *, allow_zero: bool = False) -> float:
     return q
 
 
+def _r(value: float) -> float:
+    q = round(float(value), 6)
+    if q == 0:
+        return 0.0
+    return q
+
+
 class StockService:
     def __init__(self, db: Database, auth: AuthService, audit: AuditService):
         self.db = db
@@ -71,17 +80,32 @@ class StockService:
         ).fetchone()
         if not row:
             raise ValidationError("化学品不存在")
-        flags = (row["controlled_flags"] or "").strip()
-        return bool(flags)
-
-    def _container(self, container_id: int, conn=None):
-        c = conn or self.db.conn
-        row = c.execute(
-            "SELECT * FROM containers WHERE id=?", (container_id,)
+        if (row["controlled_flags"] or "").strip():
+            return True
+        linked = c.execute(
+            """
+            SELECT 1
+            FROM chemical_controlled cc
+            JOIN controlled_categories cat ON cat.id = cc.category_id
+            WHERE cc.chemical_id=? AND cat.is_active=1
+            LIMIT 1
+            """,
+            (chemical_id,),
         ).fetchone()
+        return linked is not None
+
+    def _container(self, container_id: int, conn):
+        row = conn.execute("SELECT * FROM containers WHERE id=?", (container_id,)).fetchone()
         if not row:
             raise ValidationError("容器不存在")
         return row
+
+    def _require_location(self, conn, location_id: int | None) -> None:
+        if location_id is None:
+            return
+        row = conn.execute("SELECT id FROM locations WHERE id=?", (location_id,)).fetchone()
+        if not row:
+            raise ValidationError(f"库位不存在: {location_id}")
 
     def _open_inventory_blocks(self, container_id: int, conn) -> None:
         row = conn.execute(
@@ -96,7 +120,7 @@ class StockService:
         if row:
             raise StockError(
                 f"容器处于未关闭盘点会话 {row['session_no']}，禁止直接变更库存；"
-                "请先完成或取消盘点结算"
+                "请先完成或取消盘点"
             )
 
     def _last_tx_hash(self, conn) -> str:
@@ -124,19 +148,15 @@ class StockService:
             return False
         if reviewer is None:
             raise StockError(
-                "管制/特殊化学品的领用、归还、调拨、处置、库存调整、冲正与盘点差异调整"
-                "均需双人复核，不可绕过"
+                "管制化学品的入库、领用、归还、调拨、处置、库存调整、冲正与盘点差异调整"
+                "均需双人复核，不能由同一人完成"
             )
-        if reviewer.id == operator.id:
-            raise StockError("双人复核账户必须相互独立")
-        if reviewer.username == operator.username:
-            raise StockError("禁止使用共享账户代替双人复核")
+        if reviewer.id == operator.id or reviewer.username == operator.username:
+            raise StockError("双人复核账户必须相互独立，不能审核自己的操作")
         self.auth.require(reviewer, "stock.dual_review")
         return True
 
-    def _apply_status(
-        self, current: str, tx_type: str, qty_after: float, to_location_id
-    ) -> str:
+    def _apply_status(self, current: str, tx_type: str, qty_after: float) -> str:
         if current == "disposed" and tx_type != "reversal":
             raise StockError("已处置容器不可再出入库（请使用冲正）")
         new_status = current
@@ -174,170 +194,260 @@ class StockService:
         related_tx_id: Optional[int] = None,
         allow_during_inventory: bool = False,
         expected_qty_version: Optional[int] = None,
+        expected_location_id: Optional[int] = None,
+        idempotency_key: str | None = None,
+        conn=None,
     ) -> int:
         self.auth.require(operator, "stock.write")
         if tx_type not in TX_EFFECTS:
             raise ValidationError(f"无效事务类型: {tx_type}")
         allow_zero = tx_type == "transfer"
         quantity = _validate_quantity(quantity, allow_zero=allow_zero)
-
-        conn = self.db.conn
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            ctr = self._container(container_id, conn)
-            chemical_id = int(ctr["chemical_id"])
-
-            if not allow_during_inventory and tx_type != "transfer":
-                # transfers also blocked during inventory for consistency
-                pass
-            if not allow_during_inventory:
-                self._open_inventory_blocks(container_id, conn)
-
-            if expected_qty_version is not None:
-                current_ver = int(ctr["qty_version"] or 0)
-                if current_ver != expected_qty_version:
-                    raise StockError(
-                        f"库存版本冲突：期望 version={expected_qty_version}，"
-                        f"当前 version={current_ver}（盘点期间库存已变化）"
-                    )
-
-            dual_required = self._ensure_dual(
-                chemical_id=chemical_id,
-                tx_type=tx_type,
+        remark = (remark or "").strip()
+        key = normalize_key(idempotency_key)
+        if conn is not None:
+            if not conn.in_transaction:
+                raise RuntimeError("外部连接必须已处于事务中")
+            applied = self._apply(
+                conn,
                 operator=operator,
+                tx_type=tx_type,
+                container_id=container_id,
+                quantity=quantity,
+                remark=remark,
+                to_location_id=to_location_id,
                 reviewer=reviewer,
-                conn=conn,
+                human_confirmed_compatibility=human_confirmed_compatibility,
+                related_tx_id=related_tx_id,
+                allow_during_inventory=allow_during_inventory,
+                expected_qty_version=expected_qty_version,
+                expected_location_id=expected_location_id,
+                idempotency_key=key,
             )
+            return applied[0]
 
-            if tx_type == "transfer":
-                if to_location_id is None:
-                    raise ValidationError("调拨必须指定目标位置")
-                if not human_confirmed_compatibility:
-                    raise StockError(
-                        "调拨前须由授权人员人工确认储存相容性；"
-                        "系统不会自动判定是否可安全混储"
-                    )
-
-            if tx_type == "reversal":
-                if related_tx_id is None:
-                    raise ValidationError("冲正必须指定原事务 related_tx_id")
-                orig = conn.execute(
-                    "SELECT * FROM stock_transactions WHERE id=?", (related_tx_id,)
-                ).fetchone()
-                if not orig:
-                    raise ValidationError("原事务不存在")
-                if int(orig["container_id"]) != container_id:
-                    raise ValidationError("冲正容器与原事务不一致")
-                # reverse the original delta
-                qty_delta = -float(orig["qty_delta"])
-                quantity = abs(qty_delta) if qty_delta != 0 else 0.0
+        own = self.db.conn
+        own.execute("BEGIN IMMEDIATE")
+        try:
+            tx_id, replay = self._apply(
+                own,
+                operator=operator,
+                tx_type=tx_type,
+                container_id=container_id,
+                quantity=quantity,
+                remark=remark,
+                to_location_id=to_location_id,
+                reviewer=reviewer,
+                human_confirmed_compatibility=human_confirmed_compatibility,
+                related_tx_id=related_tx_id,
+                allow_during_inventory=allow_during_inventory,
+                expected_qty_version=expected_qty_version,
+                expected_location_id=expected_location_id,
+                idempotency_key=key,
+            )
+            if replay:
+                own.rollback()
             else:
-                sign = TX_EFFECTS[tx_type]
-                qty_delta = 0.0 if tx_type == "transfer" else sign * quantity
-
-            qty_before = float(ctr["quantity"])
-            qty_after = qty_before + qty_delta
-            if qty_after < -1e-9:
-                raise StockError(
-                    f"库存不足：当前 {qty_before}{ctr['unit']}，请求变更 {qty_delta}"
-                )
-            if qty_after < 0:
-                qty_after = 0.0
-
-            new_status = self._apply_status(
-                ctr["status"], tx_type, qty_after, to_location_id
-            )
-            new_location = ctr["location_id"]
-            if tx_type in {"inbound", "return"} and to_location_id:
-                new_location = to_location_id
-            elif tx_type == "transfer":
-                new_location = to_location_id
-
-            tx_no = self._next_tx_no(conn)
-            created_at = now_iso()
-            prev_hash = self._last_tx_hash(conn)
-            payload = {
-                "tx_no": tx_no,
-                "tx_type": tx_type,
-                "container_id": container_id,
-                "chemical_id": chemical_id,
-                "qty_delta": qty_delta,
-                "qty_before": qty_before,
-                "qty_after": qty_after,
-                "unit": ctr["unit"],
-                "from_location_id": ctr["location_id"],
-                "to_location_id": to_location_id if to_location_id is not None else new_location,
-                "operator_id": operator.id,
-                "reviewer_id": reviewer.id if reviewer else None,
-                "dual_required": 1 if dual_required else 0,
-                "related_tx_id": related_tx_id,
-                "remark": remark,
-                "created_at": created_at,
-            }
-            content_hash = chain_hash(prev_hash, payload)
-
-            cur = conn.execute(
-                """
-                INSERT INTO stock_transactions(
-                    tx_no, tx_type, container_id, chemical_id,
-                    qty_delta, qty_before, qty_after, unit,
-                    from_location_id, to_location_id,
-                    operator_id, reviewer_id, dual_required, related_tx_id,
-                    remark, content_hash, prev_hash, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tx_no,
-                    tx_type,
-                    container_id,
-                    chemical_id,
-                    qty_delta,
-                    qty_before,
-                    qty_after,
-                    ctr["unit"],
-                    ctr["location_id"],
-                    to_location_id if to_location_id is not None else new_location,
-                    operator.id,
-                    reviewer.id if reviewer else None,
-                    1 if dual_required else 0,
-                    related_tx_id,
-                    remark,
-                    content_hash,
-                    prev_hash,
-                    created_at,
-                ),
-            )
-            tx_id = int(cur.lastrowid)
-            new_version = int(ctr["qty_version"] or 0) + 1
-            conn.execute(
-                """
-                UPDATE containers
-                SET quantity=?, location_id=?, status=?, qty_version=?, updated_at=?
-                WHERE id=?
-                """,
-                (qty_after, new_location, new_status, new_version, now_iso(), container_id),
-            )
-            # Audit in same transaction
-            self.audit.log(
-                operator.id,
-                f"stock.{tx_type}",
-                "stock_transactions",
-                tx_id,
-                {
-                    "tx_no": tx_no,
-                    "container_id": container_id,
-                    "qty_delta": qty_delta,
-                    "reviewer_id": reviewer.id if reviewer else None,
-                    "content_hash": content_hash,
-                },
-                conn=conn,
-                commit=False,
-            )
-            conn.commit()
+                own.commit()
             return tx_id
         except Exception:
-            conn.rollback()
+            try:
+                own.rollback()
+            except Exception:
+                pass
             raise
+
+    def _apply(
+        self,
+        conn,
+        *,
+        operator: UserSession,
+        tx_type: str,
+        container_id: int,
+        quantity: float,
+        remark: str,
+        to_location_id: Optional[int],
+        reviewer: Optional[UserSession],
+        human_confirmed_compatibility: bool,
+        related_tx_id: Optional[int],
+        allow_during_inventory: bool,
+        expected_qty_version: Optional[int],
+        expected_location_id: Optional[int],
+        idempotency_key: str | None,
+    ) -> tuple[int, bool]:
+        digest = None
+        if idempotency_key:
+            digest = payload_hash(
+                {
+                    "op": "stock",
+                    "tx_type": tx_type,
+                    "container_id": container_id,
+                    "quantity": _r(quantity),
+                    "to_location_id": to_location_id,
+                    "remark": remark,
+                    "operator_id": operator.id,
+                    "related_tx_id": related_tx_id,
+                    "expected_location_id": expected_location_id,
+                }
+            )
+            existing = lookup(conn, idempotency_key, digest)
+            if existing is not None:
+                return int(existing["result_id"]), True
+
+        ctr = self._container(container_id, conn)
+        chemical_id = int(ctr["chemical_id"])
+        if not allow_during_inventory:
+            self._open_inventory_blocks(container_id, conn)
+        if expected_qty_version is not None:
+            current_ver = int(ctr["qty_version"] or 0)
+            if current_ver != int(expected_qty_version):
+                raise StockError(
+                    f"库存版本冲突：期望 version={expected_qty_version}，"
+                    f"当前 version={current_ver}（盘点期间库存已变化）"
+                )
+        if expected_location_id is not None and int(ctr["location_id"] or -1) != int(
+            expected_location_id
+        ):
+            raise StockError("容器不在指定库位，已拒绝本次操作")
+
+        self._require_location(conn, to_location_id)
+        dual_required = self._ensure_dual(
+            chemical_id=chemical_id,
+            tx_type=tx_type,
+            operator=operator,
+            reviewer=reviewer,
+            conn=conn,
+        )
+        if tx_type == "transfer":
+            if to_location_id is None:
+                raise ValidationError("调拨必须指定目标位置")
+            if int(to_location_id) == int(ctr["location_id"] or -1):
+                raise ValidationError("调拨目标库位与当前库位相同")
+            if not human_confirmed_compatibility:
+                raise StockError(
+                    "调拨前须由授权人员人工确认储存相容性；"
+                    "系统不会自动判定是否可安全混储"
+                )
+
+        if tx_type == "reversal":
+            if related_tx_id is None:
+                raise ValidationError("冲正必须指定原事务 related_tx_id")
+            orig = conn.execute(
+                "SELECT * FROM stock_transactions WHERE id=?", (related_tx_id,)
+            ).fetchone()
+            if not orig:
+                raise ValidationError("原事务不存在")
+            if int(orig["container_id"]) != container_id:
+                raise ValidationError("冲正容器与原事务不一致")
+            already = conn.execute(
+                "SELECT id FROM stock_transactions WHERE tx_type='reversal' AND related_tx_id=?",
+                (related_tx_id,),
+            ).fetchone()
+            if already:
+                raise StockError("该流水已经冲正，不能再次冲正")
+            qty_delta = _r(-float(orig["qty_delta"]))
+        else:
+            sign = TX_EFFECTS[tx_type]
+            qty_delta = 0.0 if tx_type == "transfer" else _r(sign * quantity)
+
+        qty_before = _r(float(ctr["quantity"]))
+        qty_after = _r(qty_before + qty_delta)
+        if qty_after < -1e-9:
+            raise StockError(
+                f"库存不足：当前 {qty_before}{ctr['unit']}，请求变更 {qty_delta}"
+            )
+        if qty_after < 0:
+            qty_after = 0.0
+
+        new_status = self._apply_status(ctr["status"], tx_type, qty_after)
+        new_location = ctr["location_id"]
+        if tx_type in {"inbound", "return"} and to_location_id:
+            new_location = to_location_id
+        elif tx_type == "transfer":
+            new_location = to_location_id
+
+        tx_no = self._next_tx_no(conn)
+        created_at = now_iso()
+        prev_hash = self._last_tx_hash(conn)
+        stored_to = to_location_id if to_location_id is not None else new_location
+        payload = {
+            "tx_no": tx_no,
+            "tx_type": tx_type,
+            "container_id": container_id,
+            "chemical_id": chemical_id,
+            "qty_delta": qty_delta,
+            "qty_before": qty_before,
+            "qty_after": qty_after,
+            "unit": ctr["unit"],
+            "from_location_id": ctr["location_id"],
+            "to_location_id": stored_to,
+            "operator_id": operator.id,
+            "reviewer_id": reviewer.id if reviewer else None,
+            "dual_required": 1 if dual_required else 0,
+            "related_tx_id": related_tx_id,
+            "remark": remark,
+            "created_at": created_at,
+        }
+        content_hash = chain_hash(prev_hash, payload)
+        cur = conn.execute(
+            """
+            INSERT INTO stock_transactions(
+                tx_no, tx_type, container_id, chemical_id,
+                qty_delta, qty_before, qty_after, unit,
+                from_location_id, to_location_id,
+                operator_id, reviewer_id, dual_required, related_tx_id,
+                remark, content_hash, prev_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tx_no,
+                tx_type,
+                container_id,
+                chemical_id,
+                qty_delta,
+                qty_before,
+                qty_after,
+                ctr["unit"],
+                ctr["location_id"],
+                stored_to,
+                operator.id,
+                reviewer.id if reviewer else None,
+                1 if dual_required else 0,
+                related_tx_id,
+                remark,
+                content_hash,
+                prev_hash,
+                created_at,
+            ),
+        )
+        tx_id = int(cur.lastrowid)
+        new_version = int(ctr["qty_version"] or 0) + 1
+        conn.execute(
+            """
+            UPDATE containers
+            SET quantity=?, location_id=?, status=?, qty_version=?, updated_at=?
+            WHERE id=?
+            """,
+            (qty_after, new_location, new_status, new_version, now_iso(), container_id),
+        )
+        self.audit.log(
+            operator.id,
+            f"stock.{tx_type}",
+            "stock_transactions",
+            tx_id,
+            {
+                "tx_no": tx_no,
+                "container_id": container_id,
+                "qty_delta": qty_delta,
+                "reviewer_id": reviewer.id if reviewer else None,
+                "content_hash": content_hash,
+            },
+            conn=conn,
+            commit=False,
+        )
+        if idempotency_key and digest is not None:
+            remember(conn, idempotency_key, digest, tx_id, {"tx_id": tx_id, "tx_no": tx_no})
+        return tx_id, False
 
     def reverse_transaction(
         self,
@@ -346,11 +456,10 @@ class StockService:
         tx_id: int,
         reviewer: Optional[UserSession] = None,
         remark: str = "",
+        idempotency_key: str | None = None,
     ) -> int:
-        """Create an immutable reversal; never delete original."""
-        orig = self.db.fetchone(
-            "SELECT * FROM stock_transactions WHERE id=?", (tx_id,)
-        )
+        """Create an immutable reversal; never delete the original row."""
+        orig = self.db.fetchone("SELECT * FROM stock_transactions WHERE id=?", (tx_id,))
         if not orig:
             raise ValidationError("原事务不存在")
         return self.post_transaction(
@@ -361,6 +470,7 @@ class StockService:
             remark=remark or f"冲正原事务 {orig['tx_no']}",
             reviewer=reviewer,
             related_tx_id=int(orig["id"]),
+            idempotency_key=idempotency_key,
         )
 
     def delete_transaction(self, _tx_id: int) -> None:
@@ -400,15 +510,37 @@ class StockService:
             prev = row["content_hash"]
         return True, "ok"
 
-    def list_transactions(self, limit: int = 200) -> list:
+    def list_transactions(self, limit: int = 200, keyword: str = "") -> list:
+        keyword = keyword.strip()
+        if keyword:
+            like = f"%{keyword}%"
+            return self.db.fetchall(
+                """
+                SELECT t.*, c.container_code, ch.name AS chemical_name,
+                       u.username AS operator_name,
+                       ru.username AS reviewer_name
+                FROM stock_transactions t
+                JOIN containers c ON c.id = t.container_id
+                JOIN chemicals ch ON ch.id = t.chemical_id
+                JOIN users u ON u.id = t.operator_id
+                LEFT JOIN users ru ON ru.id = t.reviewer_id
+                WHERE t.tx_no LIKE ? OR c.container_code LIKE ? OR ch.name LIKE ?
+                   OR IFNULL(t.remark, '') LIKE ?
+                ORDER BY t.id DESC
+                LIMIT ?
+                """,
+                (like, like, like, like, limit),
+            )
         return self.db.fetchall(
             """
             SELECT t.*, c.container_code, ch.name AS chemical_name,
-                   u.username AS operator_name
+                   u.username AS operator_name,
+                   ru.username AS reviewer_name
             FROM stock_transactions t
             JOIN containers c ON c.id = t.container_id
             JOIN chemicals ch ON ch.id = t.chemical_id
             JOIN users u ON u.id = t.operator_id
+            LEFT JOIN users ru ON ru.id = t.reviewer_id
             ORDER BY t.id DESC
             LIMIT ?
             """,

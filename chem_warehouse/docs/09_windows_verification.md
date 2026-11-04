@@ -1,3 +1,9 @@
+# Windows 验证
+
+V1.0.0 以 `docs/测试报告.md` 和发布包里的 `windows-verification.txt` 为准。在该文件由 Windows 工作流写出来之前，不能把 EXE 断网运行写成已经通过。
+
+以下是 V0.2 留下的记录。
+
 # Windows EXE / 离线验证状态（V0.2）
 
 ## 已提供

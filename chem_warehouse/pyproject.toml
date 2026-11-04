@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chem-warehouse"
-version = "0.2.0"
+version = "1.0.0"
 description = "Windows offline hazardous chemical warehouse management for analytical labs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,3 +25,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+qt_api = "pyside6"

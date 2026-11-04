@@ -1,43 +1,60 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Windows offline EXE
-# Build on Windows: pyinstaller packaging/chem_warehouse.spec
+# Onedir build. onefile is a poor fit for PySide6 (slow start, fragile plugin extraction).
+# PyInstaller injects Analysis, PYZ, EXE, COLLECT and SPECPATH.
 
-block_cipher = None
+from pathlib import Path
+
+root = Path(SPECPATH).resolve().parent
+
+datas = [
+    (str(root / "assets" / "fonts" / "DroidSansFallbackFull.ttf"), "assets/fonts"),
+    (str(root / "assets" / "fonts" / "NOTICE-DroidSans.txt"), "assets/fonts"),
+    (str(root / "assets" / "fonts" / "Apache-2.0.txt"), "assets/fonts"),
+]
 
 a = Analysis(
-    ['../src/chem_wh/main.py'],
-    pathex=['../src'],
+    [str(root / "src" / "chem_wh" / "main.py")],
+    pathex=[str(root / "src")],
     binaries=[],
-    datas=[],
-    hiddenimports=['PySide6', 'openpyxl', 'reportlab', 'qrcode', 'PIL'],
+    datas=datas,
+    hiddenimports=[
+        "chem_wh.selftest",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "reportlab.graphics.barcode.qr",
+        "reportlab.graphics.barcode.code128",
+        "reportlab.pdfbase.ttfonts",
+        "PIL.Image",
+        "openpyxl",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
-    name='ChemWarehouse',
+    exclude_binaries=True,
+    name="ChemWarehouse",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="ChemWarehouse",
 )

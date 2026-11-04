@@ -1,4 +1,6 @@
-"""SQLite schema for V0.2 (backward-compatible CREATE IF NOT EXISTS + migrations)."""
+"""SQLite schema. New databases are created in full; older files are migrated in place."""
+
+CURRENT_SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -14,7 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','warehouse','safety','viewer')),
+    role TEXT NOT NULL CHECK(role IN (
+        'admin','warehouse','safety','viewer','user','auditor'
+    )),
     display_name TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
     is_demo INTEGER NOT NULL DEFAULT 0,
@@ -63,6 +67,22 @@ CREATE TABLE IF NOT EXISTS chemical_hazards (
     hazard_class_id INTEGER NOT NULL REFERENCES hazard_classes(id),
     source_note TEXT,
     PRIMARY KEY (chemical_id, hazard_class_id)
+);
+
+CREATE TABLE IF NOT EXISTS controlled_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chemical_controlled (
+    chemical_id INTEGER NOT NULL REFERENCES chemicals(id),
+    category_id INTEGER NOT NULL REFERENCES controlled_categories(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (chemical_id, category_id)
 );
 
 CREATE TABLE IF NOT EXISTS containers (
@@ -138,7 +158,7 @@ CREATE TABLE IF NOT EXISTS inventory_sessions (
     location_id INTEGER REFERENCES locations(id),
     operator_id INTEGER NOT NULL REFERENCES users(id),
     status TEXT NOT NULL DEFAULT 'open'
-        CHECK(status IN ('open','closing','closed')),
+        CHECK(status IN ('open','closing','closed','cancelled')),
     adjustments_posted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     closed_at TEXT
@@ -183,14 +203,24 @@ CREATE TABLE IF NOT EXISTS compatibility_notes (
     CHECK(chemical_a_id < chemical_b_id)
 );
 
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    idem_key TEXT PRIMARY KEY,
+    payload_hash TEXT NOT NULL,
+    result_id INTEGER,
+    result_json TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_containers_chemical ON containers(chemical_id);
+CREATE INDEX IF NOT EXISTS idx_containers_code ON containers(container_code);
 CREATE INDEX IF NOT EXISTS idx_containers_status ON containers(status);
 CREATE INDEX IF NOT EXISTS idx_tx_created ON stock_transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_tx_chemical ON stock_transactions(chemical_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_chem_controlled_cat ON chemical_controlled(category_id);
 """
 
-# Columns added in V0.2 for existing DBs created by V0.1
+# Columns added after the earliest V0.1 files. Duplicate-column errors are ignored.
 MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE chemicals ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0",
@@ -206,4 +236,5 @@ MIGRATIONS = [
     "ALTER TABLE inventory_lines ADD COLUMN adjustment_tx_id INTEGER",
     "ALTER TABLE audit_logs ADD COLUMN content_hash TEXT",
     "ALTER TABLE audit_logs ADD COLUMN prev_hash TEXT",
+    "ALTER TABLE idempotency_keys ADD COLUMN result_json TEXT",
 ]

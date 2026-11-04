@@ -161,6 +161,11 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
     hz_flam = chem.add_hazard_class(safety, "GHS02", "易燃液体", "单位制度审核示例分类")
     chem.review_hazard_class(safety, hz_corr, "approved")
     chem.review_hazard_class(safety, hz_flam, "approved")
+    cat_yzd = chem.add_controlled_category(
+        admin, "YZD", "易制毒", "演示类别，非正式监管目录"
+    )
+    chem.add_controlled_category(admin, "YZB", "易制爆", "演示类别，非正式监管目录")
+    chem.add_controlled_category(admin, "JUDU", "剧毒", "演示类别，非正式监管目录")
 
     # Dummy SDS pdf content
     sds_root = Path(db.path).parent / "sds"
@@ -221,6 +226,7 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
             quantity=item["qty"],
             to_location_id=loc,
             remark="演示初始入库",
+            reviewer=safety,
         )
         created_containers.append(ctr_id)
 
@@ -236,6 +242,7 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
         location_id=shelf_o,
         qr_dir=qr_dir,
     )
+    chem.set_chemical_controlled(admin, int(acetone["id"]), [cat_yzd])
     stock.post_transaction(
         operator=wh,
         tx_type="inbound",
@@ -243,6 +250,7 @@ def seed_demo(db: Database, qr_dir: Path | None = None) -> dict:
         quantity=500,
         to_location_id=shelf_o,
         remark="演示第二瓶丙酮入库",
+        reviewer=safety,
     )
 
     return {

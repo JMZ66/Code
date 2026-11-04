@@ -47,7 +47,7 @@ def test_backup_and_restore(ctx, tmp_path: Path):
     note = ctx.db.fetchone("SELECT notes FROM chemicals WHERE name='盐酸'")
     assert note["notes"] == "changed"
 
-    ctx.backup.restore(admin, bak)
+    ctx.backup.restore(admin, bak, confirmed=True)
     note2 = ctx.db.fetchone("SELECT notes FROM chemicals WHERE name='盐酸'")
     assert "演示" in (note2["notes"] or "")
 

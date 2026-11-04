@@ -1,67 +1,43 @@
-# 危化品仓库管理系统 V0.2
+# 危化品仓库管理系统 1.0.0
 
-面向中国企业分析化学检测实验室的 **Windows 离线**危化品仓库管理软件。
+给分析化学实验室用的 **Windows 单机离线**试剂台账。界面是简体中文。不需要安装 Python，也不连接服务器。
 
-技术栈：Python 3.10+ · PySide6 · SQLite（完全离线，无云端 API）。
+**本软件不能替代危险化学品安全管理的法定职责、审批、备案或应急制度。** 相容性内容只保存管理员手工录入的备注，软件不会判断能不能混放。
 
-**本软件是台账与流程辅助工具，不能仅凭自身满足全部危化品安全法定义务。**
+## 给实验室同事
 
-## 功能
+1. 从 [GitHub Releases](https://github.com/JMZ66/Code/releases) 下载便携版压缩包。
+2. 解压，双击 `ChemWarehouse.exe`。
+3. 第一次按向导创建管理员。没有预置账户，也没有示例试剂。
+4. 用法见压缩包里的 `docs/用户手册.pdf`，或仓库里的 `docs/用户手册.md`。
 
-- 化学品电子台账；瓶级容器唯一编号与二维码
-- 入库/领用/归还/调拨/处置/冲正（流水不可删除；hash 链）
-- 管制品双人复核覆盖领用/归还/调拨/处置/**调整**/冲正/盘点差异
-- 演示模式 / 正式模式锁定隔离（正式禁止演示账户与模拟数据）
-- SDS 本地存档（含文件哈希）、已审核危险类别（**不做 AI 混储判定**）
-- 预警、盘点 live 结算、完整备份（DB+SDS+QR+manifest）
-- 用户权限、操作审计（与库存事务原子提交）
+演示模式默认关闭，并且使用另一份数据库。不要把演示库当成真实台账。
 
-## 快速开始
+数据在当前用户目录的 `.chem_warehouse` 里。卸载或删除程序文件夹不会删掉这份数据。
+
+## 给维护的人
+
+技术选择：Python 3.12、PySide6、SQLite（WAL，`synchronous=FULL`）。界面和打包用 PyInstaller 的文件夹形式，而不是单文件，避免 Qt 插件解压不稳定。PDF 嵌入 Droid Sans Fallback（Apache-2.0），离线也能显示中文。
 
 ```bash
 cd chem_warehouse
-pip install -r requirements.txt
-export PYTHONPATH=src   # Windows: set PYTHONPATH=src
-python -m chem_wh.main --mode demo          # 演示
-# python -m chem_wh.main --mode production  # 正式（无预置账户）
-```
-
-演示模式账号（**仅 demo**）：
-
-| 用户 | 密码 | 角色 |
-|------|------|------|
-| admin | Admin@123 | 管理员 |
-| warehouse1 / warehouse2 | Wh@12345 | 库管 |
-| safety1 | Sf@12345 | 安全员 |
-| viewer1 | Vw@12345 | 只读 |
-
-数据库默认：`~/.chem_warehouse/chem_warehouse.db`。
-
-## 测试
-
-```bash
+python -m pip install -r requirements.txt -r requirements-dev.txt
 export PYTHONPATH=src
-python -m pytest tests -v
+export QT_QPA_PLATFORM=offscreen
+python -m pytest tests -q
+python -m chem_wh.main
 ```
 
-当前：**23 passed**。
+正式库默认路径：`~/.chem_warehouse/chem_warehouse.db`。  
+演示库：`~/.chem_warehouse/demo/chem_warehouse_demo.db`（只有 `--demo` 或 `CHEM_WH_MODE=demo` 才会打开）。
 
-## Windows EXE 打包
-
-在 Windows 上执行 `scripts\build_windows.bat`。  
-**云端 Linux 环境未完成本地 EXE 断网验证**，见 `docs/09_windows_verification.md`。
+Windows 打包：`scripts\build_windows.ps1`。持续集成见 `.github/workflows/chem-warehouse.yml`。测试记录见 `docs/测试报告.md`。
 
 ## 文档
 
-| 文档 | 说明 |
+| 文件 | 内容 |
 |------|------|
-| `docs/01_reference_review.md` | 参考项目与许可证（V0.2 已复核） |
-| `docs/03_regulation_mapping.md` | 《危险化学品安全法》等映射 |
-| `docs/06_test_report.md` | 测试报告 |
-| `docs/07_compliance_gaps.md` | 合规缺口 |
-| `docs/08_security_review_v02.md` | V0.2 安全审查与变更清单 |
-| `docs/09_windows_verification.md` | Windows 验证状态 |
-
-## 许可证声明
-
-独立实现。参考项目仅作功能对照，未复制源代码。`mbmera/ChemicalManagementSystem` 无许可证声明，禁止复制其代码。
+| `docs/用户手册.md` | 给库管和实验人员 |
+| `docs/测试报告.md` | 实际跑过的测试和还没在 Win10/11 桌面上做过的事 |
+| `docs/03_regulation_mapping.md` | 法规对照，不是合规认证 |
+| `docs/07_compliance_gaps.md` | 软件做不到的法定事项 |
