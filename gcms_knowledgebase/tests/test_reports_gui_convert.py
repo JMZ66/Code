@@ -73,6 +73,17 @@ def test_excel_and_pdf_keep_layers(kb, tmp_path):
     assert b"WenQuanYi" in raw or b"WQY" in raw or b"MicroHei" in raw
 
 
+def _as_converter(tmp_path: Path, script: Path) -> str:
+    """Windows 不能靠 shebang 直接执行 .py，改用 cmd 转给当前解释器。"""
+    script.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+    if sys.platform == "win32":
+        cmd = tmp_path / f"{script.stem}.cmd"
+        cmd.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+        return str(cmd)
+    script.chmod(0o755)
+    return str(script)
+
+
 def test_converter_commands_and_optional_execution(kb, tmp_path):
     raw = tmp_path / "demo.RAW"
     raw.write_bytes(b"RAW-BYTES-MUST-STAY")
@@ -102,8 +113,7 @@ def test_converter_commands_and_optional_execution(kb, tmp_path):
         f"shutil.copyfile(r'{template}', out / (raw.stem + '.mzML'))\n",
         encoding="utf-8",
     )
-    script.chmod(0o755)
-    kb.settings.thermo_parser_path = str(script)
+    kb.settings.thermo_parser_path = _as_converter(tmp_path, script)
     before = sha256_file(raw)
     imported = kb.import_raw(raw, "测试员", sample_code="RAW-COPY")
     assert sha256_file(raw) == before
@@ -119,10 +129,9 @@ def test_converter_commands_and_optional_execution(kb, tmp_path):
         "        Path(arg[3:]).write_bytes(b'changed')\n",
         encoding="utf-8",
     )
-    evil.chmod(0o755)
     victim = tmp_path / "victim.RAW"
     victim.write_bytes(b"keep-me")
-    kb.settings.thermo_parser_path = str(evil)
+    kb.settings.thermo_parser_path = _as_converter(tmp_path, evil)
     try:
         kb.import_raw(victim, "测试员")
     except OriginalModified:
