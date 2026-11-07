@@ -1,0 +1,16 @@
+{
+  "title": "模拟：食品接触材料元素迁移（单位面积）",
+  "simulated": true,
+  "expression": "(c_meas - c_blank) * D * V / A",
+  "output_name": "q_A",
+  "expected_unit": "mg/dm**2",
+  "report_unit": "mg/dm**2",
+  "coverage": {"mode": "k", "k": 2},
+  "inputs": [
+    {"name": "c_meas", "estimate": 0.5, "unit": "mg/L", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.02, "source": "模拟：浸泡液测定浓度"},
+    {"name": "c_blank", "estimate": 0.05, "unit": "mg/L", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.01, "source": "模拟：空白"},
+    {"name": "D", "estimate": 10, "unit": "dimensionless", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.05, "source": "模拟：测定前稀释倍数"},
+    {"name": "V", "estimate": 0.1, "unit": "L", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.001, "source": "模拟：迁移液体积"},
+    {"name": "A", "estimate": 0.5, "unit": "dm**2", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.01, "source": "模拟：接触面积"}
+  ]
+}

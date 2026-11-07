@@ -1,0 +1,12 @@
+{
+  "title": "Eurachem/CITAC MUPR 2026 例2：淡水正磷酸盐平均回收率（公开算例，不是本实验室数据）",
+  "simulated": false,
+  "published_example": "Eurachem/CITAC Guide, Evaluation of measurement uncertainty from in-house precision and recovery data, First edition 2026, Example 2",
+  "model": "mean_recovery",
+  "use_k2": true,
+  "materials": [
+    {"mean": 2.31, "reference": 2.24, "sd": 0.11, "n": 12, "u_reference": 0.05},
+    {"mean": 1.032, "reference": 1.0, "sd": 0.09, "n": 10, "u_reference": 0.025},
+    {"mean": 1.7, "reference": 1.77, "sd": 0.14, "n": 1, "u_reference": 0.115}
+  ]
+}

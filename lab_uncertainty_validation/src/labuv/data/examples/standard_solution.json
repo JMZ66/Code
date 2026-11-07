@@ -1,0 +1,16 @@
+{
+  "title": "模拟：标准溶液称量、纯度、定容和稀释",
+  "simulated": true,
+  "expression": "m * P * v1 / (V * v2)",
+  "output_name": "c",
+  "expected_unit": "mg/mL",
+  "report_unit": "mg/mL",
+  "coverage": {"mode": "k", "k": 2},
+  "inputs": [
+    {"name": "m", "estimate": 100, "unit": "mg", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.1, "source": "模拟：称量质量"},
+    {"name": "P", "estimate": 99.5, "unit": "%", "kind": "B", "distribution": "rectangular", "u_mode": "half_width", "half_width": 0.5, "source": "模拟：纯度，半宽 0.5 个百分点"},
+    {"name": "V", "estimate": 100, "unit": "mL", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.08, "source": "模拟：储备液定容"},
+    {"name": "v1", "estimate": 1, "unit": "mL", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.01, "source": "模拟：移取体积"},
+    {"name": "v2", "estimate": 100, "unit": "mL", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.08, "source": "模拟：稀释定容"}
+  ]
+}

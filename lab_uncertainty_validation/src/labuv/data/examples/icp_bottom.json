@@ -1,0 +1,15 @@
+{
+  "title": "模拟：ICP-OES 消解液元素含量（自下而上）",
+  "simulated": true,
+  "expression": "c_sol * V * F / m",
+  "output_name": "w",
+  "expected_unit": "mg/g",
+  "report_unit": "mg/g",
+  "coverage": {"mode": "k", "k": 2},
+  "inputs": [
+    {"name": "c_sol", "estimate": 0.2, "unit": "mg/L", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.005, "source": "模拟：仪器溶液浓度"},
+    {"name": "V", "estimate": 0.05, "unit": "L", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.0005, "source": "模拟：定容体积"},
+    {"name": "F", "estimate": 1, "unit": "dimensionless", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0, "source": "模拟：未再稀释"},
+    {"name": "m", "estimate": 0.5, "unit": "g", "kind": "B", "distribution": "normal", "u_mode": "standard", "u": 0.001, "source": "模拟：取样质量"}
+  ]
+}

@@ -1,0 +1,246 @@
+name: lab-uncertainty-validation
+
+on:
+  pull_request:
+    paths:
+      - "lab_uncertainty_validation/**"
+      - ".github/workflows/lab-uncertainty-validation.yml"
+  push:
+    tags:
+      - "lab-uv-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-uncertainty-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux:
+    name: pytest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lab_uncertainty_validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Qt libraries for offscreen tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libglib2.0-0 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libxcb-cursor0 libnss3 libxcomposite1 libxdamage1 libxrandr2 libxi6 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: python -m pytest tests -q --tb=short
+
+  test-windows:
+    name: pytest (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: lab_uncertainty_validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "This runner is Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: python -m pytest tests -q --tb=short
+
+  package-windows:
+    name: package and offline smoke (windows-latest)
+    needs: [test-linux, test-windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: lab_uncertainty_validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "Packaging runs on Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Build portable folder
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+      - name: Require the desktop Qt plugin to be packaged
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Recurse dist\LabUncertainty -Filter qwindows.dll
+          if (-not $dll) { throw "qwindows.dll was not packaged; a desktop launch would fail." }
+          Write-Host "Packaged:" $dll.FullName
+      - name: Offscreen GUI probe of the built EXE
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = (Resolve-Path dist\LabUncertainty\LabUncertainty.exe).Path
+          $p = Start-Process -FilePath $exe -ArgumentList "--gui-probe" -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "gui-probe timed out"
+          }
+          if ($p.ExitCode -ne 0) { throw "gui-probe exit $($p.ExitCode)" }
+      - name: Self-test the built EXE
+        id: selftest
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist\LabUncertainty\LabUncertainty.exe).Path
+          $work = Join-Path $env:RUNNER_TEMP "labuv-smoke"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $db = Join-Path $work "smoke.db"
+          $report = Join-Path $work "selftest.json"
+          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "self-test timed out"
+          }
+          if (Test-Path $report) { Get-Content $report -Raw | Write-Host }
+          if ($p.ExitCode -ne 0) { throw "self-test exit $($p.ExitCode)" }
+          "exe=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "work=$work" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Self-test again with outbound traffic blocked
+        shell: pwsh
+        run: |
+          $exe = $env:exe
+          $work = $env:work
+          $rule = "labuv-block-outbound-ci"
+          $log = Join-Path $work "pfirewall.log"
+          $result = Join-Path (Get-Location) "windows-verification.txt"
+          $os = Get-CimInstance Win32_OperatingSystem
+          @(
+            "runner_caption=$($os.Caption)"
+            "runner_version=$($os.Version)"
+            "runner_build=$($os.BuildNumber)"
+            "note=GitHub-hosted windows-latest is Windows Server, not desktop Windows 10 or 11."
+            "note=No interactive desktop test on Windows 10 or 11 was performed."
+            "note=The executable is not code-signed."
+            "exe=$exe"
+            "selftest_before_firewall=passed"
+            "gui_probe=offscreen"
+          ) | Set-Content -Path $result -Encoding utf8
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
+          Add-Content $result "firewall_rule=outbound block for this exe only"
+          $logSet = $true
+          try {
+            netsh advfirewall set allprofiles logging filename "$log" | Out-Null
+            netsh advfirewall set allprofiles logging maxfilesize 32767 | Out-Null
+            netsh advfirewall set allprofiles logging droppedconnections enable | Out-Null
+            Add-Content $result "firewall_log=$log"
+          } catch {
+            $logSet = $false
+            Add-Content $result "firewall_log_error=$($_.Exception.Message)"
+          }
+          $db = Join-Path $work "smoke-offline.db"
+          $report = Join-Path $work "selftest-offline.json"
+          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","--db",$db,"--self-test-report",$report) -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "offline self-test timed out"
+          }
+          $code = $p.ExitCode
+          Add-Content $result "selftest_while_outbound_blocked_exit=$code"
+          if (Test-Path $report) {
+            Add-Content $result "selftest_report=$(Get-Content $report -Raw)"
+          }
+          if ($logSet -and (Test-Path $log)) {
+            $hits = @(Select-String -Path $log -Pattern "LabUncertainty" -SimpleMatch -ErrorAction SilentlyContinue)
+            Add-Content $result "firewall_log_lines_mentioning_exe=$($hits.Count)"
+            if ($hits.Count -eq 0) {
+              Add-Content $result "firewall_log_conclusion=no dropped-connection line named this exe while the block rule was active and the self-test passed. This shows the packaged program completed with its outbound blocked; it does not prove a packet capture of every socket."
+            } else {
+              Add-Content $result "firewall_log_conclusion=the firewall log recorded activity for this exe."
+              $hits | Select-Object -First 20 | ForEach-Object { Add-Content $result $_.Line }
+            }
+          } else {
+            Add-Content $result "firewall_log_conclusion=logging was not available. The self-test exit code under the outbound block rule is the observed result."
+          }
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          Get-Content $result
+          if ($code -ne 0) { throw "offline self-test exit $code" }
+      - name: Copy verification into the portable folder and zip it
+        shell: pwsh
+        run: |
+          Copy-Item windows-verification.txt dist\LabUncertainty\docs\windows-verification.txt -Force
+          Copy-Item packaging\使用说明.txt dist\LabUncertainty\使用说明.txt -Force
+          $zip = "dist\LabUncertainty-1.0.0-windows-portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path dist\LabUncertainty -DestinationPath $zip
+          Get-FileHash $zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $zip -Leaf)" } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Get-ChildItem dist\LabUncertainty -Recurse -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            $rel = $_.FullName.Substring((Resolve-Path dist\LabUncertainty).Path.Length + 1)
+            Add-Content dist\SHA256SUMS.txt "$hash  $rel"
+          }
+          Get-Content dist\SHA256SUMS.txt | Select-Object -First 5
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-uncertainty-windows
+          path: |
+            lab_uncertainty_validation/dist/*.zip
+            lab_uncertainty_validation/dist/SHA256SUMS.txt
+            lab_uncertainty_validation/windows-verification.txt
+            lab_uncertainty_validation/docs/用户手册.md
+            lab_uncertainty_validation/docs/标准与公式清单.md
+            lab_uncertainty_validation/docs/数值验证.md
+            lab_uncertainty_validation/docs/已知限制.md
+            lab_uncertainty_validation/docs/依赖许可.md
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/lab-uv-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $run = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          @(
+            "## 测量不确定度与分析方法验证助手 $tag"
+            ""
+            "解压整个便携目录后运行 LabUncertainty.exe。不要只复制 exe。"
+            ""
+            "- 运行器：GitHub windows-latest，是 Windows Server，不是 Windows 10/11 桌面"
+            "- 界面自检：Qt offscreen，不是实机鼠标操作"
+            "- 程序未做数字签名"
+            "- 不声明 CNAS 认可"
+            "- 本工作流：$run"
+            ""
+            "请阅读压缩包中的 docs。"
+          ) | Set-Content -Path release-notes.md -Encoding utf8
+          $assets = @(
+            (Resolve-Path dist\*.zip).Path,
+            (Resolve-Path dist\SHA256SUMS.txt).Path,
+            (Resolve-Path windows-verification.txt).Path,
+            (Resolve-Path docs\用户手册.md).Path,
+            (Resolve-Path docs\标准与公式清单.md).Path,
+            (Resolve-Path docs\数值验证.md).Path,
+            (Resolve-Path docs\已知限制.md).Path,
+            (Resolve-Path docs\依赖许可.md).Path
+          )
+          gh release create $tag --title "测量不确定度与分析方法验证助手 $tag" --notes-file release-notes.md @assets
