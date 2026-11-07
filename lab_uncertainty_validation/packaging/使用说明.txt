@@ -1,0 +1,3 @@
+请解压整个 LabUncertainty 文件夹后再运行 LabUncertainty.exe。
+不要只复制 exe。程序未做数字签名。
+构建自检使用的 GitHub Windows 运行器是 Windows Server，不是 Windows 10 或 11 桌面。

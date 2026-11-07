@@ -1,0 +1,10 @@
+WenQuanYi Micro Hei (文泉驿微米黑) 0.2.0-beta
+Copyright 2008-2009 The WenQuanYi Project Board of Trustees and contributors.
+The font is based in part on the Droid font family (Google, Ascender).
+
+This copy is distributed under the Apache License, Version 2.0.
+The upstream font is also offered as GPL-3.0 or later with a font embedding exception.
+See docs/licenses/Apache-2.0.txt.
+
+Source: https://sourceforge.net/projects/wqy/files/wqy-microhei/
+Debian package fonts-wqy-microhei records the same license choice.

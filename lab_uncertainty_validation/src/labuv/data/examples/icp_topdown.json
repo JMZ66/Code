@@ -1,0 +1,13 @@
+{
+  "title": "模拟：ICP 元素含量（自上而下，独立于自下而上例子）",
+  "simulated": true,
+  "model": "relative",
+  "value": 0.02,
+  "unit": "mg/g",
+  "intermediate_rsd": 0.03,
+  "mean_recovery": 0.98,
+  "u_recovery": 0.02,
+  "precision_includes_recovery": false,
+  "correct_recovery": false,
+  "k": 2
+}

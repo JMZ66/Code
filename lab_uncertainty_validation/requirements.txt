@@ -1,0 +1,8 @@
+PySide6>=6.6
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+openpyxl>=3.1
+pint>=0.23
+reportlab>=4.0
+pypdf>=4
