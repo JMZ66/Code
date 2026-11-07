@@ -233,14 +233,21 @@ jobs:
             ""
             "请阅读压缩包中的 docs。"
           ) | Set-Content -Path release-notes.md -Encoding utf8
+          # GitHub asset upload returned HTTP 404 for a Chinese filename.
+          # The same documents remain inside the portable zip under docs\.
+          Copy-Item docs\用户手册.md user-manual.md -Force
+          Copy-Item docs\标准与公式清单.md standards-and-formulae.md -Force
+          Copy-Item docs\数值验证.md numerical-verification.md -Force
+          Copy-Item docs\已知限制.md known-limitations.md -Force
+          Copy-Item docs\依赖许可.md dependency-licenses.md -Force
           $assets = @(
             (Resolve-Path dist\*.zip).Path,
             (Resolve-Path dist\SHA256SUMS.txt).Path,
             (Resolve-Path windows-verification.txt).Path,
-            (Resolve-Path docs\用户手册.md).Path,
-            (Resolve-Path docs\标准与公式清单.md).Path,
-            (Resolve-Path docs\数值验证.md).Path,
-            (Resolve-Path docs\已知限制.md).Path,
-            (Resolve-Path docs\依赖许可.md).Path
+            (Resolve-Path user-manual.md).Path,
+            (Resolve-Path standards-and-formulae.md).Path,
+            (Resolve-Path numerical-verification.md).Path,
+            (Resolve-Path known-limitations.md).Path,
+            (Resolve-Path dependency-licenses.md).Path
           )
           gh release create $tag --title "测量不确定度与分析方法验证助手 $tag" --notes-file release-notes.md @assets
