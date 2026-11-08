@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from bid_review.consistency.engine import check_consistency
 from bid_review.extract.fields import extract_fields
@@ -14,11 +13,19 @@ from bid_review.integrity import IntegrityGuard
 from bid_review.models import Issue, IssueCategory, ReviewResult, Severity
 from bid_review.report.writer import write_reports
 
-CN_TZ = ZoneInfo("Asia/Shanghai")
+
+def _cn_tz():
+    """Asia/Shanghai；Windows 无系统 tzdb 时回退到固定 UTC+8。"""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo("Asia/Shanghai")
+    except Exception:
+        return timezone(timedelta(hours=8), name="UTC+8")
 
 
 def _now_cn() -> str:
-    return datetime.now(tz=CN_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
+    return datetime.now(tz=_cn_tz()).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def run_review(

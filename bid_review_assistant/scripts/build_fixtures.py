@@ -303,6 +303,14 @@ def build_manifest(paths: list[Path]) -> Path:
     return path
 
 
+def _safe_print(*args: object) -> None:
+    text = " ".join(str(a) for a in args)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("utf-8", errors="replace").decode("ascii", errors="replace"))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     paths = [
@@ -314,9 +322,9 @@ def main() -> None:
         build_budget_xlsx(),
     ]
     build_manifest(paths)
-    print("fixtures ->", OUT)
+    _safe_print("fixtures ->", OUT)
     for p in paths:
-        print(" ", p.name)
+        _safe_print(" ", p.name)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ a = Analysis(
         'openpyxl',
         'pypdf',
         'lxml',
+        'tzdata',
     ],
     hookspath=[],
     hooksconfig={},

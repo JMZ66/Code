@@ -15,6 +15,7 @@ dependencies = [
   "openpyxl>=3.1.2",
   "pypdf>=4.0.0",
   "lxml>=5.0.0",
+  "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
