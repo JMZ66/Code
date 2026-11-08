@@ -12,7 +12,6 @@ build/
 testdata/eval_out/*
 !testdata/eval_out/detection_eval.json
 !testdata/eval_out/.gitkeep
-审查输出/
 *.xlsx.bak
 .DS_Store
 *.spec.bak
