@@ -57,7 +57,20 @@ def _from_files(pairs: list[str], root: Path) -> list[tuple[Path, str, str]]:
     return documents
 
 
+def _configure_stdio() -> None:
+    """Windows consoles default to a legacy code page. Reports are UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            continue
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "gui":

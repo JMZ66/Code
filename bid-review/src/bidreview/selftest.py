@@ -41,5 +41,5 @@ def run_self_test() -> int:
             if not Path(report[name]).is_file():
                 problems.append(f"缺少报告 {name}")
         payload = {"ok": not problems, "problems": problems, "keys": sorted(keys), "summary": result.to_summary()}
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=True, indent=2))
         return 0 if not problems else 1
