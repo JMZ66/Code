@@ -160,14 +160,13 @@ jobs:
             ""
             "请阅读压缩包中的 docs。"
           ) | Set-Content -Path release-notes.md -Encoding utf8
-          Copy-Item README.md readme.md -Force
           Copy-Item packaging\usage.txt usage.txt -Force
           Copy-Item docs\THIRD_PARTY_REVIEW.md third-party-review.md -Force
           $assets = @(
             (Resolve-Path dist\*.zip).Path,
             (Resolve-Path dist\SHA256SUMS.txt).Path,
             (Resolve-Path windows-verification.txt).Path,
-            (Resolve-Path readme.md).Path,
+            (Resolve-Path README.md).Path,
             (Resolve-Path usage.txt).Path,
             (Resolve-Path third-party-review.md).Path
           )
