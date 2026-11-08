@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "name": "默认招投标正文格式配置",
+  "body": {
+    "font_name": "宋体",
+    "font_size_pt": 12.0,
+    "line_spacing": 1.5,
+    "alignment": "justify"
+  },
+  "heading1": {
+    "font_name": "黑体",
+    "font_size_pt": 16.0,
+    "bold": true
+  },
+  "heading2": {
+    "font_name": "黑体",
+    "font_size_pt": 14.0,
+    "bold": true
+  },
+  "margins_cm": {
+    "top": 2.54,
+    "bottom": 2.54,
+    "left": 3.17,
+    "right": 3.17,
+    "tolerance": 0.15
+  },
+  "table": {
+    "min_cols": 2,
+    "require_header_row": true
+  },
+  "header_must_contain": [],
+  "footer_must_contain": [],
+  "required_sections": [
+    "招标公告",
+    "投标人须知",
+    "技术要求",
+    "合同条款"
+  ],
+  "required_attachments": [
+    "资格证明材料",
+    "技术方案",
+    "报价表"
+  ],
+  "placeholders": [
+    "____",
+    "……",
+    "待填写",
+    "待补充",
+    "XXX",
+    "×××",
+    "【请填写】",
+    "【填写】",
+    "TODO",
+    "TBD",
+    "占位",
+    "此处填写"
+  ]
+}

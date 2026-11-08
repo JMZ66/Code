@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "name": "验收测试配置",
+  "body": {
+    "font_name": "宋体",
+    "font_size_pt": 12.0,
+    "line_spacing": 1.5,
+    "alignment": "justify"
+  },
+  "heading1": {
+    "font_name": "黑体",
+    "font_size_pt": 16.0,
+    "bold": true
+  },
+  "heading2": {
+    "font_name": "黑体",
+    "font_size_pt": 14.0,
+    "bold": true
+  },
+  "margins_cm": {
+    "top": 2.54,
+    "bottom": 2.54,
+    "left": 3.17,
+    "right": 3.17,
+    "tolerance": 0.15
+  },
+  "table": {
+    "min_cols": 2,
+    "require_header_row": true
+  },
+  "required_sections": [
+    "招标公告",
+    "投标人须知",
+    "技术要求",
+    "合同条款"
+  ],
+  "required_attachments": [
+    "资格证明材料",
+    "技术方案",
+    "报价表"
+  ],
+  "placeholders": [
+    "____",
+    "【请填写】",
+    "待填写",
+    "XXX",
+    "TODO"
+  ]
+}

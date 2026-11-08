@@ -1,0 +1,14 @@
+招投标文件审查助手 1.0（只读·离线）
+
+1. 双击 BidReviewAssistant.exe 打开图形界面。
+2. 添加 DOCX / PDF / XLSX；建议指定官方 Word 模板。
+3. 选择报告目录，点击「开始只读审查」。
+4. 报告为独立的 Excel / HTML / Markdown / JSON，不会改写原文件。
+5. 报告内含 SHA-256，可用于证明核查前后原文件未变。
+
+命令行示例：
+  BidReviewAssistant.exe 正文.docx 预算.xlsx -t 模板.docx -o D:\reports
+  BidReviewAssistant.exe --self-test
+
+详细说明见 docs\使用说明.md。
+本工具不上传文件、不调用云端 API，也不自动修改招标文件。
