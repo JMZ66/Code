@@ -1,0 +1,59 @@
+[package]
+name = "local_search"
+version = "1.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "本地全文搜索：离线索引并检索本机文档"
+publish = false
+rust-version = "1.85"
+
+[[bin]]
+name = "LocalSearch"
+path = "src/main.rs"
+
+[[bin]]
+name = "local-search-parse"
+path = "src/bin/parse_worker.rs"
+
+[dependencies]
+anyhow = "1"
+arboard = "3"
+chardetng = "0.1"
+csv = "1"
+directories = "5"
+eframe = "0.31"
+egui = "0.31"
+encoding_rs = "0.8"
+env_logger = "0.11"
+libc = "0.2"
+log = "0.4"
+lopdf = "0.34"
+notify = "6"
+office_oxide = "=0.1.16"
+open = "5"
+quick-xml = "0.37"
+regex = "1"
+regex-syntax = "0.8"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tantivy = "0.27"
+unicode-normalization = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.19"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 8
+opt-level = 3
+strip = "symbols"

@@ -1,0 +1,10 @@
+Droid Sans Fallback
+Copyright 2006-2010 Google Corp.
+
+Licensed under the Apache License, Version 2.0.
+The font file is redistributed so the portable build can draw Chinese text
+without downloading a font at runtime. "Droid" is a trademark of Google Corp.
+This application is not a Google product and does not use the Droid name as
+its own product name.
+
+The full Apache License 2.0 text is in licenses/Apache-2.0.txt.
