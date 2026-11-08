@@ -1,0 +1,25 @@
+{
+  "expected_true": 6,
+  "true_positives": [
+    "duration_conflict",
+    "amount_conflict",
+    "placeholder",
+    "missing_attachment",
+    "format_drift",
+    "revisions_or_comments"
+  ],
+  "false_negatives": [],
+  "false_confirmed_errors": [],
+  "confirmed_error_count": 16,
+  "issue_total": 75,
+  "recall_approx": 1.0,
+  "precision_against_forbidden": 1.0,
+  "summary": {
+    "确定错误": 16,
+    "疑似冲突": 8,
+    "缺少依据": 15,
+    "需要人工判断": 36,
+    "提示": 0
+  },
+  "integrity_unchanged": true
+}

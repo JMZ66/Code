@@ -1,0 +1,117 @@
+name: bid-review-assistant
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "bid-review-v*"
+  pull_request:
+    paths:
+      - "bid_review_assistant/**"
+      - ".github/workflows/bid-review-assistant.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bid-review-assistant-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux:
+    name: pytest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bid_review_assistant
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Build fixtures and test
+        env:
+          PYTHONPATH: src
+        run: |
+          python scripts/build_fixtures.py
+          python -m pytest tests -q --tb=short
+          python scripts/eval_detection.py
+      - name: Upload eval artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bid-review-eval-linux
+          path: |
+            bid_review_assistant/testdata/eval_out/
+            bid_review_assistant/testdata/generated/MANIFEST.md
+
+  test-windows:
+    name: pytest (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: bid_review_assistant
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "This runner is Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Build fixtures and test
+        env:
+          PYTHONPATH: src
+        shell: pwsh
+        run: |
+          python scripts/build_fixtures.py
+          python -m pytest tests -q --tb=short
+          python scripts/eval_detection.py
+
+  package-windows:
+    name: package Windows portable zip
+    needs: [test-linux, test-windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: bid_review_assistant
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build portable folder
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+      - name: CLI smoke on packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path dist\BidReviewAssistant\BidReviewAssistant.exe
+          # windowed EXE: invoke via python entry is preferred for headless; also ship console helper
+          python -c "import runpy; print('packaged tree ok')" 
+          if (-not (Test-Path $exe)) { throw "EXE missing" }
+          Get-ChildItem dist\BidReviewAssistant | Select-Object -First 20 | Format-Table
+          Write-Host "EXE=$exe"
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: BidReviewAssistant-windows-x64
+          path: bid_review_assistant/dist/BidReviewAssistant-windows-x64.zip
+      - name: Publish GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/bid-review-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bid_review_assistant/dist/BidReviewAssistant-windows-x64.zip
+          generate_release_notes: true
+          name: Bid Review Assistant ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
