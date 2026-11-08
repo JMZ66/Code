@@ -135,7 +135,7 @@ jobs:
       - name: Zip portable package
         shell: pwsh
         run: |
-          $ver = "1.0.0"
+          $ver = "1.0.1"
           $zip = Join-Path $env:RUNNER_TEMP "BidReviewAssistant-$ver-windows-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "dist\BidReviewAssistant\*" -DestinationPath $zip
