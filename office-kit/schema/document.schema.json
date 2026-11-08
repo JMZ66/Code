@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-kit.local/schema/document.schema.json",
+  "title": "OfficeKitDocument",
+  "type": "object",
+  "required": ["source", "kind", "status", "warnings", "features"],
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "type": "object",
+      "required": ["path", "filename", "format", "sha256", "size"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string"},
+        "filename": {"type": "string"},
+        "format": {"enum": ["docx", "doc", "xlsx", "xls", "pdf"]},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size": {"type": "integer", "minimum": 0},
+        "converter": {"type": ["string", "null"]},
+        "converted_from": {"type": ["string", "null"]}
+      }
+    },
+    "kind": {"enum": ["word", "excel", "pdf"]},
+    "status": {"enum": ["ok", "converter_unavailable", "reserved", "error"]},
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {"type": "string"},
+          "message": {"type": "string"}
+        }
+      }
+    },
+    "features": {"type": "array", "items": {"type": "string"}},
+    "word": {"type": ["object", "null"]},
+    "excel": {"type": ["object", "null"]},
+    "pdf": {"type": ["object", "null"]}
+  }
+}

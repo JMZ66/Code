@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "office-kit"
+version = "0.1.0"
+description = "面向招投标文件的 Word/Excel 解析、核对与最小改写工具包（供智能体调用）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "office-kit"}]
+dependencies = [
+  "lxml>=5",
+  "openpyxl>=3.1",
+  "xlrd>=2.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "xlwt>=1.3",
+]
+
+[project.scripts]
+office-kit = "office_kit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
