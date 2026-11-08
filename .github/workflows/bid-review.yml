@@ -1,0 +1,173 @@
+name: bid-review
+
+on:
+  pull_request:
+    paths:
+      - "bid-review/**"
+      - ".github/workflows/bid-review.yml"
+  push:
+    tags:
+      - "bid-review-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bid-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux:
+    name: pytest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bid-review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Tk and a virtual display
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        run: xvfb-run -a python -m pytest tests -q --tb=short
+
+  test-windows:
+    name: pytest (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: bid-review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python packages
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "This runner is Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Run tests
+        run: python -m pytest tests -q --tb=short
+
+  package-windows:
+    name: package and offline smoke (windows-latest)
+    needs: [test-linux, test-windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: bid-review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Record runner OS
+        shell: pwsh
+        run: |
+          Write-Host "Packaging runs on Windows Server, not desktop Windows 10 or 11."
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+      - name: Build portable folder
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+      - name: Self-test the built EXE
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist\BidReview\BidReview.exe).Path
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
+          & $exe self-test
+          if ($LASTEXITCODE -ne 0) { throw "self-test exit $LASTEXITCODE" }
+          "exe=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Self-test again with outbound traffic blocked
+        shell: pwsh
+        run: |
+          $exe = $env:exe
+          $rule = "bidreview-block-outbound-ci"
+          $result = Join-Path (Get-Location) "windows-verification.txt"
+          $os = Get-CimInstance Win32_OperatingSystem
+          @(
+            "runner_caption=$($os.Caption)"
+            "runner_version=$($os.Version)"
+            "runner_build=$($os.BuildNumber)"
+            "note=GitHub-hosted windows-latest is Windows Server, not desktop Windows 10 or 11."
+            "note=No interactive desktop test on Windows 10 or 11 was performed."
+            "note=The executable is not code-signed."
+            "exe=$exe"
+            "selftest_before_firewall=passed"
+          ) | Set-Content -Path $result -Encoding utf8
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
+          Add-Content $result "firewall_rule=outbound block for this exe only"
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
+          & $exe self-test
+          $code = $LASTEXITCODE
+          Add-Content $result "selftest_while_outbound_blocked_exit=$code"
+          Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+          Get-Content $result
+          if ($code -ne 0) { throw "offline self-test exit $code" }
+      - name: Zip the portable folder
+        shell: pwsh
+        run: |
+          Copy-Item windows-verification.txt dist\BidReview\docs\windows-verification.txt -Force
+          $name = if ("${{ github.ref_name }}" -like "bid-review-v*") { "BidReview-${{ github.ref_name }}-windows.zip" } else { "BidReview-windows.zip" }
+          $zip = Join-Path dist $name
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path dist\BidReview -DestinationPath $zip
+          Get-FileHash $zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $zip -Leaf)" } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bid-review-windows
+          path: |
+            bid-review/dist/*.zip
+            bid-review/dist/SHA256SUMS.txt
+            bid-review/windows-verification.txt
+            bid-review/docs/**
+            bid-review/README.md
+            bid-review/packaging/usage.txt
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/bid-review-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $run = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          @(
+            "## 招投标文件审查助手 $tag"
+            ""
+            "解压整个便携目录后运行 BidReview.exe。不要只复制 exe。"
+            ""
+            "- 运行器：GitHub windows-latest，是 Windows Server，不是 Windows 10/11 桌面"
+            "- 已做命令行 self-test；未在 Windows 10/11 上做鼠标操作"
+            "- 打包时对该 exe 做了出站防火墙阻断后再次 self-test"
+            "- 程序未做数字签名"
+            "- 不调用云端模型，不修改原文件"
+            "- 本工作流：$run"
+            ""
+            "请阅读压缩包中的 docs。"
+          ) | Set-Content -Path release-notes.md -Encoding utf8
+          Copy-Item packaging\usage.txt usage.txt -Force
+          Copy-Item docs\THIRD_PARTY_REVIEW.md third-party-review.md -Force
+          $assets = @(
+            (Resolve-Path dist\*.zip).Path,
+            (Resolve-Path dist\SHA256SUMS.txt).Path,
+            (Resolve-Path windows-verification.txt).Path,
+            (Resolve-Path README.md).Path,
+            (Resolve-Path usage.txt).Path,
+            (Resolve-Path third-party-review.md).Path
+          )
+          gh release create $tag --title "招投标文件审查助手 $tag" --notes-file release-notes.md @assets

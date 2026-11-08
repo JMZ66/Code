@@ -1,0 +1,16 @@
+招投标文件审查助手（只读、离线）
+
+把整个 BidReview 文件夹放在本机。不要只复制 BidReview.exe。
+
+双击 BidReview.exe 打开图形界面。
+命令行示例（在本文件夹打开终端）：
+
+  BidReview.exe self-test
+  BidReview.exe check --manifest manifest.json --out report-out
+  BidReview.exe hash file.docx
+
+审查不会修改原始 DOCX、PDF、XLSX。报告写到你指定的输出目录，
+内含 Excel、HTML、Markdown，以及审查前后的 SHA-256。
+
+本程序不上传文件，默认也不调用任何模型。中文说明在 docs 目录（用户手册.md）。
+程序未做数字签名。Windows 可能提示未知发布者，这不表示程序改写了标书。
