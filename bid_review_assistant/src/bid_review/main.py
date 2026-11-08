@@ -8,6 +8,24 @@ import sys
 from pathlib import Path
 
 
+def _configure_stdio() -> None:
+    """避免 Windows 默认 cp1252 控制台无法打印中文进度。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+
+def _safe_print(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        sys.stdout.buffer.write((msg + "\n").encode(encoding, errors="replace"))
+        sys.stdout.buffer.flush()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bid-review",
@@ -67,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -102,25 +121,22 @@ def main(argv: list[str] | None = None) -> int:
 
     from bid_review.pipeline import run_review
 
-    def progress(msg: str) -> None:
-        print(msg, flush=True)
-
     result, paths = run_review(
         args.inputs,
         args.output,
         template_docx=args.template,
         profile_json=args.profile,
         role_hints=role_hints,
-        progress=progress,
+        progress=_safe_print,
     )
-    print("—— 审查完成 ——")
+    _safe_print("—— 审查完成 ——")
     for k, v in result.summary().items():
-        print(f"{k}: {v}")
-    print("报告：")
+        _safe_print(f"{k}: {v}")
+    _safe_print("报告：")
     for kind, path in paths.items():
-        print(f"  [{kind}] {path}")
+        _safe_print(f"  [{kind}] {path}")
     if args.json_summary:
-        print(json.dumps(result.to_dict()["summary"], ensure_ascii=False))
+        _safe_print(json.dumps(result.to_dict()["summary"], ensure_ascii=False))
     return 0
 
 
@@ -184,13 +200,13 @@ def _run_self_test(output_dir: str) -> int:
             output_dir or str(tmp_path / "out"),
             template_docx=template,
             role_hints={"正文.docx": "正文", "预算.xlsx": "预算"},
-            progress=print,
+            progress=_safe_print,
         )
         after = {p.name: sha256_file(p) for p in (main_doc, budget, template)}
         assert before == after
         assert all(i.unchanged for i in result.integrity)
         assert paths["excel"]
-        print(json.dumps({"ok": True, "summary": result.summary(), "reports": paths}, ensure_ascii=False))
+        _safe_print(json.dumps({"ok": True, "summary": result.summary(), "reports": paths}, ensure_ascii=False))
     return 0
 
 

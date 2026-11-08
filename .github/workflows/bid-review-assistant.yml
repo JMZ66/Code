@@ -106,14 +106,20 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "gui-probe exit $($p.ExitCode)" }
       - name: Self-test the built EXE
         shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
         run: |
           $exe = (Resolve-Path dist\BidReviewAssistant\BidReviewAssistant.exe).Path
           $out = Join-Path $env:RUNNER_TEMP "bid-review-smoke"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","-o",$out) -PassThru -NoNewWindow -Wait
-          if ($p.ExitCode -ne 0) { throw "self-test exit $($p.ExitCode)" }
+          & $exe --self-test -o $out
+          if ($LASTEXITCODE -ne 0) { throw "self-test exit $LASTEXITCODE" }
       - name: Self-test again with outbound traffic blocked
         shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
         run: |
           $exe = (Resolve-Path dist\BidReviewAssistant\BidReviewAssistant.exe).Path
           $rule = "bid-review-block-outbound-ci"
@@ -121,8 +127,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
           New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block -Profile Any | Out-Null
-          $p = Start-Process -FilePath $exe -ArgumentList @("--self-test","-o",$out) -PassThru -NoNewWindow -Wait
-          $code = $p.ExitCode
+          & $exe --self-test -o $out
+          $code = $LASTEXITCODE
           Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
           if ($code -ne 0) { throw "offline self-test exit $code" }
           Write-Host "offline self-test passed under outbound block"
