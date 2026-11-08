@@ -47,7 +47,6 @@ pub fn is_link_reparse(tag: u32) -> bool {
 
 #[cfg(windows)]
 pub fn probe_path(path: &std::path::Path) -> Option<CloudProbe> {
-    use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::GetFileAttributesW;
     let wide = long_wide(path);

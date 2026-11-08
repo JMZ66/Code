@@ -220,7 +220,6 @@ fn kill_child(child: &mut Child) {
 
 #[cfg(windows)]
 fn assign_job(pid: u32) -> Option<windows::Win32::Foundation::HANDLE> {
-    use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
