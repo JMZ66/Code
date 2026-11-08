@@ -7,6 +7,6 @@ if (-not (Test-Path "dist\BidReview\BidReview.exe")) {
 }
 New-Item -ItemType Directory -Force -Path "dist\BidReview\docs" | Out-Null
 Copy-Item README.md, LICENSE "dist\BidReview\" -Force
-Copy-Item packaging\使用说明.txt "dist\BidReview\使用说明.txt" -Force
-Copy-Item docs\* "dist\BidReview\docs\" -Recurse -Force
+Copy-Item "packaging\usage.txt" "dist\BidReview\usage.txt" -Force
+Copy-Item "docs\*" "dist\BidReview\docs\" -Recurse -Force
 Write-Host "Built dist\BidReview\BidReview.exe"

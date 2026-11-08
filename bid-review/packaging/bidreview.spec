@@ -13,7 +13,7 @@ a = Analysis(
         (str(root / "docs"), "docs"),
         (str(root / "README.md"), "."),
         (str(root / "LICENSE"), "."),
-        (str(root / "packaging" / "使用说明.txt"), "."),
+        (str(root / "packaging" / "usage.txt"), "."),
     ],
     hiddenimports=[
         "bidreview",
